@@ -261,14 +261,11 @@ def train_all(
             "max_daily_turnover": 0.03,
             "conflict_policy": "drop_both_same_symbol",
         },
-        "research_gate_base": str(
-            (input_csv.parent / "held_intraday_bidirectional_trigger_1000_to_1445_buy006_sell0075_base_research_gate_20260714.json").resolve()
-        ),
-        "research_gate_touch_stress": str(
-            (input_csv.parent / "held_intraday_bidirectional_trigger_1000_to_1445_buy006_sell0075_touch_stress_research_gate_20260714.json").resolve()
-        ),
+        "research_gate_base": None,
+        "research_gate_touch_stress": None,
+        "requires_recomputed_research_gates": True,
         "deployment_allowed": False,
-        "next_gate": "gmquant_held_only_dry_run_audit",
+        "next_gate": "frozen_forward_replay_then_gmquant_held_only_dry_run_audit",
     }
     output_json.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     return report
