@@ -519,8 +519,12 @@ def edge_from_sell_buy(
 def read_stage_symbol(stage_dir: Path | None, raw_inst: str) -> pd.DataFrame | None:
     if stage_dir is None:
         return None
-    path = stage_dir / f"{raw_inst}.csv"
-    if not path.exists():
+    candidates = [
+        stage_dir / f"{raw_inst}.csv",
+        stage_dir / f"{raw_inst}_1m.csv",
+    ]
+    path = next((candidate for candidate in candidates if candidate.exists()), None)
+    if path is None:
         return None
     frame = pd.read_csv(path, parse_dates=["date"])
     missing = [col for col in REQUIRED if col not in frame.columns]

@@ -130,8 +130,27 @@ def local_to_rq(symbol: object) -> str:
 
 
 def normalize_price_frame(frame: pd.DataFrame, frequency: str) -> pd.DataFrame:
+    numeric = [
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+        "amount",
+        "limit_up",
+        "limit_down",
+        "prev_close",
+    ]
+    columns = [
+        "date",
+        "instrument",
+        *numeric,
+        "source",
+        "frequency",
+        "adjust_type",
+    ]
     if frame is None or frame.empty:
-        return pd.DataFrame()
+        return pd.DataFrame(columns=columns)
     out = frame.reset_index()
     if "order_book_id" not in out.columns:
         raise ValueError("RQData price frame is missing order_book_id")
@@ -147,17 +166,6 @@ def normalize_price_frame(frame: pd.DataFrame, frequency: str) -> pd.DataFrame:
     out["date"] = pd.to_datetime(out["date"], errors="coerce")
     out["instrument"] = out["order_book_id"].map(rq_to_local)
     out = out.dropna(subset=["date"]).copy()
-    numeric = [
-        "open",
-        "high",
-        "low",
-        "close",
-        "volume",
-        "amount",
-        "limit_up",
-        "limit_down",
-        "prev_close",
-    ]
     for column in numeric:
         if column in out.columns:
             out[column] = pd.to_numeric(out[column], errors="coerce")
@@ -166,14 +174,6 @@ def normalize_price_frame(frame: pd.DataFrame, frequency: str) -> pd.DataFrame:
     out["source"] = SOURCE
     out["frequency"] = frequency
     out["adjust_type"] = "pre"
-    columns = [
-        "date",
-        "instrument",
-        *numeric,
-        "source",
-        "frequency",
-        "adjust_type",
-    ]
     return (
         out[columns]
         .drop_duplicates(["instrument", "date"], keep="last")

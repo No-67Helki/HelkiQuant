@@ -8,11 +8,18 @@ import numpy as np
 import pandas as pd
 from catboost import CatBoostClassifier, Pool
 
-from held_intraday_factor_engineering import (
-    INDUSTRY_ENGINEERED_FEATURES,
-    LIMIT_ENGINEERED_FEATURES,
-    REALTIME_ENGINEERED_FEATURES,
-)
+try:
+    from .held_intraday_factor_engineering import (
+        INDUSTRY_ENGINEERED_FEATURES,
+        LIMIT_ENGINEERED_FEATURES,
+        REALTIME_ENGINEERED_FEATURES,
+    )
+except ImportError:
+    from held_intraday_factor_engineering import (
+        INDUSTRY_ENGINEERED_FEATURES,
+        LIMIT_ENGINEERED_FEATURES,
+        REALTIME_ENGINEERED_FEATURES,
+    )
 
 
 FEATURE_COLS = [

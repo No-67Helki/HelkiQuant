@@ -10,7 +10,18 @@ import pandas as pd
 from catboost import CatBoostClassifier, CatBoostRanker, CatBoostRegressor, Pool
 from sklearn.isotonic import IsotonicRegression
 
-from evaluate_held_intraday_decision_model import auc_score, metrics, select_feature_cols
+try:
+    from .evaluate_held_intraday_decision_model import (
+        auc_score,
+        metrics,
+        select_feature_cols,
+    )
+except ImportError:
+    from evaluate_held_intraday_decision_model import (
+        auc_score,
+        metrics,
+        select_feature_cols,
+    )
 
 
 def sha256_file(path: Path) -> str:

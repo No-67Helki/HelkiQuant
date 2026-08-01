@@ -2,6 +2,7 @@
 .runtime/
 .secrets/
 .env
+configs/*.local.json
 
 data/
 outputs/

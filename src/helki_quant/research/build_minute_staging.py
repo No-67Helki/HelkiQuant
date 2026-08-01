@@ -27,8 +27,12 @@ if str(PRECOMPUTE_SCRIPT_DIR) not in sys.path:
 if str(MULTI_LAYER) not in sys.path:
     sys.path.insert(0, str(MULTI_LAYER))
 
-from precompute_intra_real import FACTOR_NAMES, compute_daily_factors  # noqa: E402
-from realtime_output import run_streaming, setup_realtime_output  # noqa: E402
+try:
+    from .precompute_intra_real import FACTOR_NAMES, compute_daily_factors
+    from ..realtime_output import run_streaming, setup_realtime_output
+except ImportError:
+    from precompute_intra_real import FACTOR_NAMES, compute_daily_factors  # noqa: E402
+    from realtime_output import run_streaming, setup_realtime_output  # noqa: E402
 
 
 DEFAULT_STAGE_CSV = DATA / "_research_1min_pool_csv_2026"

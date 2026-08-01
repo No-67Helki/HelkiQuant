@@ -9,8 +9,12 @@ import numpy as np
 import pandas as pd
 from catboost import CatBoostClassifier, Pool
 
-from evaluate_held_intraday_decision_model import auc_score, select_feature_cols
-from run_held_intraday_anchored_oof import edge_col_for_label
+try:
+    from .evaluate_held_intraday_decision_model import auc_score, select_feature_cols
+    from .run_held_intraday_anchored_oof import edge_col_for_label
+except ImportError:
+    from evaluate_held_intraday_decision_model import auc_score, select_feature_cols
+    from run_held_intraday_anchored_oof import edge_col_for_label
 
 
 PROFILES = {

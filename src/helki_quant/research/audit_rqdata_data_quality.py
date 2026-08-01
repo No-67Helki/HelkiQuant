@@ -304,9 +304,11 @@ def audit(args: argparse.Namespace) -> dict[str, Any]:
     minute_csv = output.with_name(output.stem + "_minute.csv")
     pd.DataFrame(daily_rows).to_csv(daily_csv, index=False, encoding="utf-8-sig")
     pd.DataFrame(minute_rows).to_csv(minute_csv, index=False, encoding="utf-8-sig")
+    daily_gate_passed = bool(daily_rows and daily_ratio >= min_ratio)
+    minute_gate_passed = bool(not minute_rows or minute_ratio >= min_ratio)
     report = {
         "status": "rqdata_vs_local_quality_audit",
-        "passed": bool(daily_rows and daily_ratio >= min_ratio),
+        "passed": daily_gate_passed and minute_gate_passed,
         "source_policy": "rqdata_primary_local_fallback",
         "comparison_range": {
             "start": start.strftime("%Y-%m-%d"),
@@ -327,9 +329,7 @@ def audit(args: argparse.Namespace) -> dict[str, Any]:
             "decision": minute_decision,
             "details_csv": str(minute_csv),
         },
-        "historical_data_replacement_allowed": bool(
-            daily_rows and daily_ratio >= min_ratio
-        ),
+        "historical_data_replacement_allowed": daily_gate_passed,
         "historical_retrain_decision": historical_retrain,
         "new_untouched_evaluation_required": True,
         "frozen_profile_retuning_allowed": False,

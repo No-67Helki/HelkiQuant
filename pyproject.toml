@@ -27,6 +27,7 @@ dev = ["pytest>=8,<9"]
 [project.scripts]
 helki-rqdata-sync = "helki_quant.research.sync_rqdata_market_data:main"
 helki-rqdata-audit = "helki_quant.research.audit_rqdata_data_quality:main"
+helki-canonical-audit = "helki_quant.research.audit_canonical_market_data:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
+from argparse import Namespace
 from pathlib import Path
 
 import numpy as np
@@ -16,7 +20,9 @@ from helki_quant.research.data_sources.rqdata_bridge import (
     rq_to_local,
 )
 from helki_quant.research.data_sources.rqdata_source import (
+    DEFAULT_CONFIG,
     MarketDataGateway,
+    load_config,
     local_symbol,
     merge_price_sources,
     read_license,
@@ -24,6 +30,8 @@ from helki_quant.research.data_sources.rqdata_source import (
 )
 from helki_quant.research.materialize_rqdata_canonical import (
     materialize_daily,
+    materialize_minute,
+    symbols_from_args,
 )
 
 
@@ -62,6 +70,42 @@ def test_symbol_conversions_cover_local_rq_and_gm_formats() -> None:
     assert local_symbol("SHSE.600000") == "sh600000"
     assert local_to_rq("sz000001") == "000001.XSHE"
     assert rq_to_local("600000.XSHG") == "sh600000"
+
+
+def test_minute_request_uses_only_rqdata_supported_price_fields() -> None:
+    config = load_config(DEFAULT_CONFIG)
+
+    assert config["api"]["minute_fields"] == [
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+        "total_turnover",
+    ]
+
+
+def test_quality_audit_module_starts_from_installed_package_layout() -> None:
+    root = Path(__file__).resolve().parents[1]
+    environment = os.environ.copy()
+    environment["PYTHONPATH"] = str(root / "src")
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "helki_quant.research.audit_rqdata_data_quality",
+            "--help",
+        ],
+        cwd=root,
+        env=environment,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "Compare RQData with legacy local market data" in result.stdout
 
 
 def test_placeholder_license_is_rejected(tmp_path: Path) -> None:
@@ -134,6 +178,15 @@ def test_rqdata_multiindex_price_frame_normalizes() -> None:
     assert result["amount"].tolist() == [10000, 11200]
 
 
+def test_rqdata_empty_price_frame_preserves_normalized_schema() -> None:
+    result = normalize_price_frame(pd.DataFrame(), "1m")
+
+    assert result.empty
+    assert {"date", "instrument", "open", "close", "frequency"}.issubset(
+        result.columns
+    )
+
+
 def test_rqdata_pit_boolean_panel_normalizes() -> None:
     raw = pd.DataFrame(
         {"000001.XSHE": [False, True], "600000.XSHG": [False, False]},
@@ -186,3 +239,74 @@ def test_daily_materialization_keeps_existing_history(tmp_path: Path) -> None:
     assert len(rows) == 1
     assert result["date"].min() == pd.Timestamp("2026-06-01")
     assert result["date"].max() == pd.Timestamp("2026-06-04")
+
+
+def test_minute_materialization_can_exclude_legacy_fallback(tmp_path: Path) -> None:
+    primary_root = tmp_path / "primary_minute"
+    fallback_root = tmp_path / "fallback_minute"
+    canonical_root = tmp_path / "canonical_minute"
+    for root in (primary_root, fallback_root, canonical_root):
+        root.mkdir()
+    config = {
+        "mode": "rqdata_primary_local_fallback",
+        "primary": {
+            "daily_root": str(tmp_path / "primary_daily"),
+            "minute_root": str(primary_root),
+        },
+        "fallback": {
+            "daily_root": str(tmp_path / "fallback_daily"),
+            "minute_root": str(fallback_root),
+        },
+    }
+    primary = price_frame().iloc[:2].copy()
+    primary["date"] = pd.to_datetime(
+        ["2026-06-08 09:31:00", "2026-06-08 09:32:00"]
+    )
+    primary.to_csv(
+        primary_root / "sz000001_rqdata_20260608_20260608.csv", index=False
+    )
+    (fallback_root / "invalid_legacy_file.csv").write_text(
+        "this file must not be read\n", encoding="utf-8"
+    )
+
+    rows = materialize_minute(
+        MarketDataGateway(config),
+        ["sz000001"],
+        canonical_root,
+        pd.Timestamp("2026-06-08"),
+        pd.Timestamp("2026-06-08"),
+        include_fallback=False,
+    )
+
+    result = read_price_csv(canonical_root / "sz000001_1m.csv", frequency="1m")
+    assert len(rows) == 1
+    assert len(result) == 2
+    assert rows[0]["fallback_rows"] == 0
+
+
+def test_daily_symbol_discovery_excludes_non_stock_files(tmp_path: Path) -> None:
+    primary_root = tmp_path / "primary_daily"
+    fallback_root = tmp_path / "fallback_daily"
+    primary_root.mkdir()
+    fallback_root.mkdir()
+    (primary_root / "000001_daily_qfq.csv").touch()
+    (fallback_root / "T00018_daily_qfq.csv").touch()
+    gateway = MarketDataGateway(
+        {
+            "mode": "rqdata_primary_local_fallback",
+            "primary": {
+                "daily_root": str(primary_root),
+                "minute_root": str(tmp_path / "primary_minute"),
+            },
+            "fallback": {
+                "daily_root": str(fallback_root),
+                "minute_root": str(tmp_path / "fallback_minute"),
+            },
+        }
+    )
+
+    symbols = symbols_from_args(
+        Namespace(symbols=None, symbols_file=None, frequency="daily"), gateway
+    )
+
+    assert symbols == ["sz000001"]

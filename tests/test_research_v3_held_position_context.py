@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -21,6 +23,7 @@ from build_minute_staging import source_overlaps_date_range  # noqa: E402
 from build_held_intraday_decision_dataset import (  # noqa: E402
     add_cross_sectional_features,
     add_trigger_aligned_labels,
+    read_stage_symbol,
     trigger_label_prefix,
 )
 from replay_held_intraday_t0 import run_replay  # noqa: E402
@@ -60,6 +63,68 @@ def test_minute_sources_are_pruned_before_parsing():
     assert source_overlaps_date_range(
         (Path("2026-03/20260331_1min.zip"), "sz300001.csv"), start, end
     )
+
+
+def test_held_dataset_reads_versioned_canonical_minute_filename(tmp_path: Path):
+    pd.DataFrame(
+        {
+            "date": ["2026-06-08 09:31:00"],
+            "open": [10.0],
+            "high": [10.1],
+            "low": [9.9],
+            "close": [10.0],
+            "volume": [1000.0],
+            "amount": [10000.0],
+        }
+    ).to_csv(tmp_path / "sz300001_1m.csv", index=False)
+
+    result = read_stage_symbol(tmp_path, "sz300001")
+
+    assert result is not None
+    assert len(result) == 1
+    assert result.iloc[0]["close"] == 10.0
+
+
+def test_execution_label_cli_starts_from_installed_package_layout():
+    environment = os.environ.copy()
+    environment["PYTHONPATH"] = str(ROOT / "src")
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "helki_quant.research.augment_held_intraday_execution_labels",
+            "--help",
+        ],
+        cwd=ROOT,
+        env=environment,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_bidirectional_training_cli_starts_from_installed_package_layout():
+    environment = os.environ.copy()
+    environment["PYTHONPATH"] = str(ROOT / "src")
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "helki_quant.research.train_held_intraday_bidirectional_live_models",
+            "--help",
+        ],
+        cwd=ROOT,
+        env=environment,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
 
 
 def test_trigger_aligned_labels_match_limit_touch_and_inventory_rules():

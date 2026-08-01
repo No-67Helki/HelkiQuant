@@ -56,10 +56,7 @@
       "low",
       "close",
       "volume",
-      "total_turnover",
-      "limit_up",
-      "limit_down",
-      "prev_close"
+      "total_turnover"
     ]
   },
   "quality_gate": {

@@ -57,7 +57,7 @@ def symbols_from_args(args: argparse.Namespace, gateway: MarketDataGateway) -> l
     if not values and args.frequency == "daily":
         paths = list(gateway.primary_daily.glob("*_daily_qfq.csv"))
         paths.extend(gateway.fallback_daily.glob("*_daily_qfq.csv"))
-        values.extend(path.name[:6] for path in paths)
+        values.extend(path.name[:6] for path in paths if path.name[:6].isdigit())
     if not values:
         raise ValueError("minute materialization requires --symbols or --symbols-file")
     return sorted({local_symbol(value) for value in values})
@@ -114,21 +114,31 @@ def materialize_minute(
     output_root: Path,
     start: pd.Timestamp,
     end: pd.Timestamp,
+    *,
+    include_fallback: bool = True,
 ) -> list[dict[str, Any]]:
-    source_index = build_minute_source_index(gateway.fallback_minute)
+    source_index = (
+        build_minute_source_index(gateway.fallback_minute)
+        if include_fallback
+        else {}
+    )
     rows: list[dict[str, Any]] = []
     for pos, symbol in enumerate(symbols, start=1):
         primary_parts = [read_price_csv(path, frequency="1m") for path in gateway.minute_primary_files(symbol)]
         primary = pd.concat(primary_parts, ignore_index=True) if primary_parts else None
-        fallback_parts = [
-            read_one(source)
-            for source in files_for_instrument(
-                symbol,
-                source_index=source_index,
-                start=start,
-                end=end,
-            )
-        ]
+        fallback_parts = (
+            [
+                read_one(source)
+                for source in files_for_instrument(
+                    symbol,
+                    source_index=source_index,
+                    start=start,
+                    end=end,
+                )
+            ]
+            if include_fallback
+            else []
+        )
         fallback = pd.concat(fallback_parts, ignore_index=True) if fallback_parts else None
         primary = restrict(primary, start, end, "minute") if primary is not None else None
         fallback = restrict(fallback, start, end, "minute") if fallback is not None else None
@@ -165,6 +175,11 @@ def parser() -> argparse.ArgumentParser:
     root.add_argument("--symbols-file", type=Path)
     root.add_argument("--output-root", type=Path)
     root.add_argument("--manifest", type=Path)
+    root.add_argument(
+        "--primary-only",
+        action="store_true",
+        help="Materialize only RQData rows; intended for minute data with incompatible legacy adjustment scales.",
+    )
     return root
 
 
@@ -182,12 +197,24 @@ def main() -> None:
     if args.frequency == "daily":
         rows = materialize_daily(gateway, symbols, output_root, start, end)
     else:
-        rows = materialize_minute(gateway, symbols, output_root, start, end)
+        rows = materialize_minute(
+            gateway,
+            symbols,
+            output_root,
+            start,
+            end,
+            include_fallback=not args.primary_only,
+        )
     manifest_path = args.manifest.resolve() if args.manifest else resolve_repo_path(config["canonical"]["manifest"])
+    source_precedence = (
+        ["rqdata_primary"]
+        if args.primary_only
+        else ["rqdata_primary", "local_fallback"]
+    )
     report = {
-        "status": "rqdata_primary_local_fallback_materialized",
+        "status": "rqdata_primary_materialized" if args.primary_only else "rqdata_primary_local_fallback_materialized",
         "frequency": args.frequency,
-        "source_precedence": ["rqdata_primary", "local_fallback"],
+        "source_precedence": source_precedence,
         "range": {"start": start.strftime("%Y-%m-%d"), "end": end.strftime("%Y-%m-%d")},
         "requested_symbols": len(symbols),
         "written_symbols": len(rows),

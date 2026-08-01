@@ -7,11 +7,18 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from build_held_intraday_decision_dataset import (
-    BUYBACK_WINDOWS,
-    add_cross_sectional_features,
-    add_execution_aligned_labels,
-)
+try:
+    from .build_held_intraday_decision_dataset import (
+        BUYBACK_WINDOWS,
+        add_cross_sectional_features,
+        add_execution_aligned_labels,
+    )
+except ImportError:
+    from build_held_intraday_decision_dataset import (
+        BUYBACK_WINDOWS,
+        add_cross_sectional_features,
+        add_execution_aligned_labels,
+    )
 
 
 def augment(

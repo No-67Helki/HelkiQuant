@@ -54,8 +54,10 @@ flowchart LR
 ## Data Policy
 
 RQData is the primary source for daily bars, 1-minute bars, trading calendars,
-and PIT ST/suspension state. Existing local CSV files can fill missing dates or
-symbols. Equal timestamps always prefer the API row.
+and PIT ST/suspension state. Audited local daily CSV files can fill missing
+historical dates or symbols, with the API row winning on equal timestamps.
+Minute histories must remain source-consistent across corporate actions; use a
+primary-only minute build whenever adjustment scales differ between providers.
 
 The source-quality gate compares normalized OHLC paths, returns, timestamp
 coverage, volume and turnover consistency, duplicate rows, and invalid bars
@@ -78,6 +80,9 @@ python -m helki_quant.research.sync_rqdata_market_data daily `
 python -m helki_quant.research.audit_rqdata_data_quality `
   --start-date 2025-01-01 --end-date 2026-06-05 `
   --symbols sz000001,sh600000 --sample-size 0
+python -m helki_quant.research.materialize_rqdata_canonical minute `
+  --start-date 2025-01-01 --end-date 2026-06-05 `
+  --symbols sz000001,sh600000 --primary-only
 ```
 
 ## Installation
