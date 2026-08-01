@@ -1,4 +1,4 @@
-# Copyright (c) Qlib_helki multi-layer strategy.
+# Copyright (c) HelkiQuant contributors.
 # Licensed under the MIT License.
 """
 预计算 8 个真·1min 聚合因子 + 1 个日内T标签，写入 qlib 二进制格式到 cn_data_pool/features/<inst>/。

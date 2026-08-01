@@ -1,4 +1,4 @@
-# Copyright (c) Qlib_helki multi-layer strategy.
+# Copyright (c) HelkiQuant contributors.
 # Licensed under the MIT License.
 """
 Alpha158IntraReal: 面向内层（日内T方向二分类）的真·日内特征。

@@ -1,4 +1,4 @@
-# Copyright (c) Qlib_helki multi-layer strategy.
+# Copyright (c) HelkiQuant contributors.
 # Licensed under the MIT License.
 """
 Alpha158Macro: 面向外层（21日远期收益分类）的宏观/中长周期特征。

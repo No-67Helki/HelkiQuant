@@ -1,8 +1,8 @@
-# Copyright (c) Qlib_helki multi-layer strategy.
+# Copyright (c) HelkiQuant contributors.
 """
 analyze_multi_layer.py
 ======================
-对 examples/multi_layer/artifacts/<exp_name>/ 下导出的三层 CatBoost+DEnsemble
+对 artifacts/<exp_name>/ 下导出的三层 CatBoost+DEnsemble
 模型做全面分析，并生成单一 HTML 报告。
 
 用法：

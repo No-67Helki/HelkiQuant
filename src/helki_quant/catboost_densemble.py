@@ -1,4 +1,4 @@
-# Copyright (c) Qlib_helki multi-layer strategy.
+# Copyright (c) HelkiQuant contributors.
 # Licensed under the MIT License.
 """
 CatBoostDEnsemble
@@ -28,9 +28,8 @@ try:
     from qlib.model.interpret.base import FeatureInt
     from qlib.log import get_module_logger
 except ModuleNotFoundError:
-    # The repository-local qlib source can shadow an installed wheel before
-    # its C extensions are built. DEnsemble only needs these lightweight
-    # interfaces when a dataframe-backed adapter is supplied.
+    # DEnsemble only needs these lightweight interfaces when a
+    # dataframe-backed adapter is supplied without the research extra.
     import logging
 
     class Model:

@@ -1,4 +1,4 @@
-# Copyright (c) Qlib_helki multi-layer strategy.
+# Copyright (c) HelkiQuant contributors.
 # Licensed under the MIT License.
 """
 三层嵌套机器学习策略 - 训练 + 回测入口

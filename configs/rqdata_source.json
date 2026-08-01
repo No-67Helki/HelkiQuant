@@ -8,7 +8,7 @@
   "runtime": {
     "python": ".runtime/rqsdk310/Scripts/python.exe",
     "rqsdk": ".runtime/rqsdk310/Scripts/rqsdk.exe",
-    "bridge": "examples/multi_layer/research_v3/data_sources/rqdata_bridge.py",
+    "bridge": "src/helki_quant/research/data_sources/rqdata_bridge.py",
     "required_rqsdk_version": "1.7.4",
     "required_rqdatac_version": "3.6.1"
   },

@@ -1,4 +1,4 @@
-# Copyright (c) Qlib_helki multi-layer strategy.
+# Copyright (c) HelkiQuant contributors.
 # Licensed under the MIT License.
 """
 CatBoost 分类模型 - 用于外层行情状态识别（主升浪/震荡/主跌浪）。
