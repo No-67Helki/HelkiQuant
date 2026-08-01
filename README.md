@@ -123,6 +123,26 @@ The runtime validates target freshness, account binding, ST/suspension state,
 position synchronization, target transition, and activation-registry integrity
 before submitting PAPER orders.
 
+Promotion to a PAPER candidate is fail-closed. The final gate requires a
+complete 60-session canonical untouched window, a matching frozen-profile
+promotion report, a clean target preflight, exact local-to-GmQuant execution
+reconciliation, and at least 20 finalized PAPER sessions:
+
+```powershell
+helki-live-readiness `
+  --config configs/live_readiness.example.json `
+  --canonical-readiness outputs/canonical_readiness.json `
+  --promotion outputs/promotion.json `
+  --preflight outputs/preflight.json `
+  --gm-compare outputs/gm_compare.json `
+  --activation-registry outputs/paper_activation_registry.jsonl `
+  --expected-account-id $env:GM_ACCOUNT_ID `
+  --output outputs/live_readiness.json
+```
+
+The gate never authorizes real-money deployment. A passing result only marks
+the frozen package as ready for a separate human-approved deployment review.
+
 ## Project Layout
 
 ```text

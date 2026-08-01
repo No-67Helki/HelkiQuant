@@ -1,0 +1,13 @@
+{
+  "profile_aliases": {},
+  "paper_observation_rules": {
+    "min_finalized_sessions": 20,
+    "max_error_events": 0,
+    "min_rebalance_events_per_session": 1,
+    "require_one_finalized_session_per_trade_date": true,
+    "max_sessions_with_unexpected_rejects": 0,
+    "max_sessions_with_unexplained_target_mismatch": 0,
+    "max_consecutive_unresolved_sell_sessions": 3,
+    "max_latest_unresolved_sell_symbols": 0
+  }
+}

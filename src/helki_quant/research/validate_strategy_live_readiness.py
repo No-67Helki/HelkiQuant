@@ -8,13 +8,25 @@ from typing import Any
 
 import pandas as pd
 
-from paper_activation_registry import (
-    EVENT_ERROR,
-    EVENT_FINALIZED,
-    EVENT_READY,
-    SESSION_METRICS_SCHEMA_VERSION,
-    read_activation_registry,
-)
+try:
+    from .paper_activation_registry import (
+        EVENT_ERROR,
+        EVENT_FINALIZED,
+        EVENT_READY,
+        SESSION_METRICS_SCHEMA_VERSION,
+        read_activation_registry,
+    )
+except ImportError:  # pragma: no cover - direct script compatibility
+    from paper_activation_registry import (
+        EVENT_ERROR,
+        EVENT_FINALIZED,
+        EVENT_READY,
+        SESSION_METRICS_SCHEMA_VERSION,
+        read_activation_registry,
+    )
+
+
+MIN_CANONICAL_HOLDOUT_SESSIONS = 60
 
 
 def sha256_file(path: Path) -> str:
@@ -90,6 +102,7 @@ def _promotion_holdout_end(promotion: dict[str, Any]) -> pd.Timestamp | None:
 def validate(
     *,
     config_path: Path,
+    canonical_readiness_path: Path,
     promotion_path: Path,
     preflight_path: Path,
     gm_compare_path: Path,
@@ -98,6 +111,7 @@ def validate(
     output_path: Path,
 ) -> dict[str, Any]:
     config_path = config_path.resolve()
+    canonical_readiness_path = canonical_readiness_path.resolve()
     promotion_path = promotion_path.resolve()
     preflight_path = preflight_path.resolve()
     gm_compare_path = gm_compare_path.resolve()
@@ -108,9 +122,86 @@ def validate(
 
     config = load_json(config_path, "live-readiness config")
     checks: list[dict[str, Any]] = []
+    canonical_readiness = _read_optional(
+        canonical_readiness_path,
+        "canonical_readiness",
+        checks,
+    )
     promotion = _read_optional(promotion_path, "promotion", checks)
     preflight = _read_optional(preflight_path, "preflight", checks)
     gm_compare = _read_optional(gm_compare_path, "gm_compare", checks)
+
+    canonical_holdout = canonical_readiness.get("holdout") or {}
+    canonical_sessions = int(canonical_holdout.get("sessions") or 0)
+    canonical_required_sessions = int(
+        canonical_holdout.get("required_sessions")
+        or MIN_CANONICAL_HOLDOUT_SESSIONS
+    )
+    effective_required_sessions = max(
+        canonical_required_sessions,
+        MIN_CANONICAL_HOLDOUT_SESSIONS,
+    )
+    canonical_last_session = pd.to_datetime(
+        canonical_holdout.get("last_session"),
+        errors="coerce",
+    )
+    if pd.isna(canonical_last_session):
+        canonical_last_session = None
+    else:
+        canonical_last_session = pd.Timestamp(canonical_last_session).normalize()
+    add_check(
+        checks,
+        "canonical_readiness.passed",
+        canonical_readiness.get("passed") is True,
+        canonical_readiness.get("passed"),
+        True,
+    )
+    add_check(
+        checks,
+        "canonical_readiness.data_integrity",
+        canonical_readiness.get("data_integrity_passed") is True,
+        canonical_readiness.get("data_integrity_passed"),
+        True,
+    )
+    add_check(
+        checks,
+        "canonical_readiness.promotion_window",
+        canonical_readiness.get("promotion_window_ready") is True,
+        canonical_readiness.get("promotion_window_ready"),
+        True,
+    )
+    add_check(
+        checks,
+        "canonical_readiness.profile_frozen",
+        canonical_readiness.get("profile_frozen") is True,
+        canonical_readiness.get("profile_frozen"),
+        True,
+    )
+    add_check(
+        checks,
+        "canonical_readiness.minimum_required_sessions",
+        canonical_required_sessions >= MIN_CANONICAL_HOLDOUT_SESSIONS,
+        canonical_required_sessions,
+        {">=": MIN_CANONICAL_HOLDOUT_SESSIONS},
+    )
+    add_check(
+        checks,
+        "canonical_readiness.holdout_sessions",
+        canonical_sessions >= effective_required_sessions,
+        canonical_sessions,
+        {">=": effective_required_sessions},
+    )
+    add_check(
+        checks,
+        "canonical_readiness.holdout_end",
+        canonical_last_session is not None,
+        (
+            str(canonical_last_session.date())
+            if canonical_last_session is not None
+            else None
+        ),
+        "valid last session",
+    )
 
     selected_profile = str(promotion.get("selected_profile_id") or "")
     add_check(
@@ -141,6 +232,24 @@ def validate(
         holdout_end is not None,
         str(holdout_end.date()) if holdout_end is not None else None,
         "valid evidence holdout end",
+    )
+    add_check(
+        checks,
+        "promotion.matches_canonical_holdout",
+        holdout_end is not None
+        and canonical_last_session is not None
+        and holdout_end == canonical_last_session,
+        {
+            "promotion": (
+                str(holdout_end.date()) if holdout_end is not None else None
+            ),
+            "canonical": (
+                str(canonical_last_session.date())
+                if canonical_last_session is not None
+                else None
+            ),
+        },
+        "equal",
     )
 
     target = preflight.get("target") or {}
@@ -492,6 +601,7 @@ def validate(
     passed = not failed
     inputs: dict[str, Any] = {"config": artifact(config_path)}
     for name, path in (
+        ("canonical_readiness", canonical_readiness_path),
         ("promotion", promotion_path),
         ("preflight", preflight_path),
         ("gm_compare", gm_compare_path),
@@ -537,6 +647,7 @@ def validate(
 def parser() -> argparse.ArgumentParser:
     root = argparse.ArgumentParser()
     root.add_argument("--config", type=Path, required=True)
+    root.add_argument("--canonical-readiness", type=Path, required=True)
     root.add_argument("--promotion", type=Path, required=True)
     root.add_argument("--preflight", type=Path, required=True)
     root.add_argument("--gm-compare", type=Path, required=True)
@@ -550,6 +661,7 @@ def main() -> None:
     args = parser().parse_args()
     result = validate(
         config_path=args.config,
+        canonical_readiness_path=args.canonical_readiness,
         promotion_path=args.promotion,
         preflight_path=args.preflight,
         gm_compare_path=args.gm_compare,

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -51,6 +53,23 @@ def _build_inputs(tmp_path: Path, sessions: int = 3) -> dict[str, Path]:
     evidence = _write_json(
         tmp_path / "evidence.json",
         {"holdout": {"end": "2026-06-30"}},
+    )
+    canonical_readiness = _write_json(
+        tmp_path / "canonical_readiness.json",
+        {
+            "passed": True,
+            "data_integrity_passed": True,
+            "promotion_window_ready": True,
+            "profile_frozen": True,
+            "return_metrics_evaluated": False,
+            "holdout": {
+                "first_session": "2026-04-08",
+                "last_session": "2026-06-30",
+                "sessions": 60,
+                "required_sessions": 60,
+                "remaining_sessions": 0,
+            },
+        },
     )
     promotion = _write_json(
         tmp_path / "promotion.json",
@@ -138,6 +157,7 @@ def _build_inputs(tmp_path: Path, sessions: int = 3) -> dict[str, Path]:
         )
     return {
         "config": config,
+        "canonical_readiness": canonical_readiness,
         "promotion": promotion,
         "preflight": preflight,
         "compare": compare,
@@ -148,6 +168,7 @@ def _build_inputs(tmp_path: Path, sessions: int = 3) -> dict[str, Path]:
 def _validate(tmp_path: Path, paths: dict[str, Path]) -> dict:
     return validate(
         config_path=paths["config"],
+        canonical_readiness_path=paths["canonical_readiness"],
         promotion_path=paths["promotion"],
         preflight_path=paths["preflight"],
         gm_compare_path=paths["compare"],
@@ -162,6 +183,78 @@ def test_complete_evidence_passes_paper_readiness(tmp_path: Path) -> None:
     assert result["passed"] is True
     assert result["paper_simulation_candidate_ready"] is True
     assert result["real_money_deployment_allowed"] is False
+
+
+def test_incomplete_canonical_window_fails_even_with_passing_promotion(
+    tmp_path: Path,
+) -> None:
+    paths = _build_inputs(tmp_path)
+    payload = json.loads(
+        paths["canonical_readiness"].read_text(encoding="utf-8")
+    )
+    payload.update({"passed": False, "promotion_window_ready": False})
+    payload["holdout"].update(
+        {
+            "last_session": "2026-07-31",
+            "sessions": 39,
+            "remaining_sessions": 21,
+        }
+    )
+    _write_json(paths["canonical_readiness"], payload)
+
+    result = _validate(tmp_path, paths)
+
+    failed = {row["name"] for row in result["failed_checks"]}
+    assert "canonical_readiness.passed" in failed
+    assert "canonical_readiness.promotion_window" in failed
+    assert "canonical_readiness.holdout_sessions" in failed
+    assert "promotion.matches_canonical_holdout" in failed
+
+
+def test_canonical_window_cannot_lower_required_sessions(
+    tmp_path: Path,
+) -> None:
+    paths = _build_inputs(tmp_path)
+    payload = json.loads(
+        paths["canonical_readiness"].read_text(encoding="utf-8")
+    )
+    payload["holdout"].update(
+        {
+            "sessions": 20,
+            "required_sessions": 20,
+            "remaining_sessions": 0,
+        }
+    )
+    _write_json(paths["canonical_readiness"], payload)
+
+    result = _validate(tmp_path, paths)
+
+    failed = {row["name"] for row in result["failed_checks"]}
+    assert "canonical_readiness.minimum_required_sessions" in failed
+    assert "canonical_readiness.holdout_sessions" in failed
+
+
+def test_package_module_entrypoint_is_importable() -> None:
+    env = os.environ.copy()
+    existing_pythonpath = env.get("PYTHONPATH")
+    env["PYTHONPATH"] = str(ROOT / "src") + (
+        os.pathsep + existing_pythonpath if existing_pythonpath else ""
+    )
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "helki_quant.research.validate_strategy_live_readiness",
+            "--help",
+        ],
+        cwd=ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert "--canonical-readiness" in completed.stdout
 
 
 def test_volume_mismatch_fails_closed(tmp_path: Path) -> None:
