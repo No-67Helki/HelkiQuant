@@ -1,0 +1,76 @@
+{
+  "schema_version": 1,
+  "mode": "rqdata_primary_local_fallback",
+  "official_docs": {
+    "rqsdk": "https://www.ricequant.com/doc/rqsdk",
+    "rqdata_python": "https://www.ricequant.com/doc/rqdata/python/"
+  },
+  "runtime": {
+    "python": ".runtime/rqsdk310/Scripts/python.exe",
+    "rqsdk": ".runtime/rqsdk310/Scripts/rqsdk.exe",
+    "bridge": "examples/multi_layer/research_v3/data_sources/rqdata_bridge.py",
+    "required_rqsdk_version": "1.7.4",
+    "required_rqdatac_version": "3.6.1"
+  },
+  "credentials": {
+    "license_file": ".secrets/rqdata_license.txt",
+    "placeholder": "PASTE_RQSDK_LICENSE_KEY_HERE"
+  },
+  "primary": {
+    "daily_root": "data/market_data/rqdata/daily_qfq",
+    "minute_root": "data/market_data/rqdata/minute_1m",
+    "metadata_root": "data/market_data/rqdata/metadata"
+  },
+  "fallback": {
+    "daily_root": "data/A_Stock_daily_qfq/daily_qfq_6.5",
+    "minute_root": "data/A_Stock_1min/2026_1min"
+  },
+  "canonical": {
+    "daily_root": "data/market_data/canonical/daily_qfq",
+    "minute_root": "data/market_data/canonical/minute_1m",
+    "manifest": "data/market_data/canonical/MARKET_DATA_MANIFEST.json"
+  },
+  "api": {
+    "market": "cn",
+    "adjust_type": "pre",
+    "skip_suspended": true,
+    "daily_batch_size": 80,
+    "minute_batch_size": 1,
+    "market_state_batch_size": 100,
+    "retries": 3,
+    "retry_backoff_seconds": 2.0,
+    "daily_fields": [
+      "open",
+      "high",
+      "low",
+      "close",
+      "volume",
+      "total_turnover",
+      "limit_up",
+      "limit_down",
+      "prev_close"
+    ],
+    "minute_fields": [
+      "open",
+      "high",
+      "low",
+      "close",
+      "volume",
+      "total_turnover",
+      "limit_up",
+      "limit_down",
+      "prev_close"
+    ]
+  },
+  "quality_gate": {
+    "min_daily_common_date_ratio": 0.98,
+    "max_daily_return_abs_diff_p95": 0.005,
+    "max_daily_normalized_ohlc_rel_diff_p95": 0.01,
+    "min_daily_volume_log_correlation": 0.95,
+    "min_daily_amount_log_correlation": 0.95,
+    "min_minute_common_timestamp_ratio": 0.98,
+    "max_minute_return_abs_diff_p95": 0.003,
+    "max_minute_normalized_ohlc_rel_diff_p95": 0.005,
+    "min_valid_symbol_ratio": 0.95
+  }
+}

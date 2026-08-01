@@ -1,0 +1,10 @@
+{
+  "status": "research_only_middle_feature_blacklist",
+  "reason": "2026-06-05 extended holdout data audit found qfq OHLC versus amount/volume scale risk. Current middle whitelist kept WVMA20/WVMA30, both weighted-price features.",
+  "features": [
+    "WVMA20",
+    "WVMA30"
+  ],
+  "source_audit": "../outputs/middle_factor_risk_audit_20260606.json",
+  "deployment_allowed": false
+}

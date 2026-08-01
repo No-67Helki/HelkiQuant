@@ -1,0 +1,315 @@
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+import pandas as pd
+
+
+ROOT = Path(__file__).resolve().parents[1]
+RESEARCH = ROOT / "src" / "helki_quant" / "research"
+sys.path.insert(0, str(RESEARCH))
+
+from paper_activation_registry import (  # noqa: E402
+    EVENT_FINALIZED,
+    EVENT_READY,
+    EVENT_STARTED,
+    append_activation_event,
+)
+from validate_strategy_live_readiness import validate  # noqa: E402
+
+
+ACCOUNT = "paper-account"
+PROFILE = "challenger"
+PROFILE_ALIAS = "runtime-challenger"
+
+
+def _write_json(path: Path, payload: dict) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    return path
+
+
+def _build_inputs(tmp_path: Path, sessions: int = 3) -> dict[str, Path]:
+    config = _write_json(
+        tmp_path / "config.json",
+        {
+            "profile_aliases": {PROFILE: PROFILE_ALIAS},
+            "paper_observation_rules": {
+                "min_finalized_sessions": sessions,
+                "max_error_events": 0,
+                "min_rebalance_events_per_session": 1,
+                "require_one_finalized_session_per_trade_date": True,
+                "max_sessions_with_unexpected_rejects": 0,
+                "max_sessions_with_unexplained_target_mismatch": 0,
+                "max_consecutive_unresolved_sell_sessions": 3,
+                "max_latest_unresolved_sell_symbols": 0,
+            },
+        },
+    )
+    evidence = _write_json(
+        tmp_path / "evidence.json",
+        {"holdout": {"end": "2026-06-30"}},
+    )
+    promotion = _write_json(
+        tmp_path / "promotion.json",
+        {
+            "passed": True,
+            "paper_candidate_promotion_allowed": True,
+            "selected_profile_id": PROFILE,
+            "evidence": str(evidence.resolve()),
+        },
+    )
+    last_date = pd.Timestamp("2026-07-01") + pd.offsets.BDay(sessions - 1)
+    preflight = _write_json(
+        tmp_path / "preflight.json",
+        {
+            "passed": True,
+            "errors": [],
+            "target": {
+                "invalid_lots": 0,
+                "forbidden_hits": [],
+                "trade_dates": [last_date.strftime("%Y-%m-%d")],
+            },
+        },
+    )
+    compare = _write_json(
+        tmp_path / "compare.json",
+        {
+            "profile": PROFILE_ALIAS,
+            "gm_date_shift_trading_days": 0,
+            "fill_comparison": {
+                "gm_only_keys": 0,
+                "local_only_keys": 0,
+                "volume_mismatch_keys": 0,
+                "filled_volume_diff_total": 0,
+            },
+            "gm": {
+                "unexpected_rejected_orders": 0,
+                "unresolved_rejected_sell_symbols": 0,
+            },
+        },
+    )
+    registry = tmp_path / "registry.jsonl"
+    for index, day in enumerate(pd.bdate_range("2026-07-01", periods=sessions)):
+        run_id = f"run-{index}"
+        identity = {
+            "activation_schema_version": 1,
+            "run_id": run_id,
+            "activation_id": f"activation-{index}",
+            "strategy_id": "paper-strategy",
+            "account_id": ACCOUNT,
+            "run_mode": "LIVE",
+            "trading_env": "PAPER",
+            "trade_date": day.strftime("%Y-%m-%d"),
+            "signal_date": (day - pd.offsets.BDay(1)).strftime("%Y-%m-%d"),
+        }
+        append_activation_event(
+            registry,
+            event=EVENT_STARTED,
+            identity=identity,
+            timestamp=day + pd.Timedelta(hours=9),
+        )
+        append_activation_event(
+            registry,
+            event=EVENT_READY,
+            identity=identity,
+            timestamp=day + pd.Timedelta(hours=9, minutes=1),
+            metrics={"position_sync_succeeded": True},
+        )
+        append_activation_event(
+            registry,
+            event=EVENT_FINALIZED,
+            identity=identity,
+            timestamp=day + pd.Timedelta(hours=15),
+            metrics={
+                "rebalance_events": 1,
+                "pending_target_order_symbols": [],
+                "pending_execution_symbols": [],
+                "forbidden_clear_pending": [],
+                "pending_buy_symbols": [],
+                "position_sync_succeeded_at_finalize": True,
+                "session_metrics_schema_version": 1,
+                "unexpected_rejected_orders": 0,
+                "unexplained_target_volume_abs_diff": 0,
+                "unresolved_rejected_sell_symbol_list": [],
+            },
+        )
+    return {
+        "config": config,
+        "promotion": promotion,
+        "preflight": preflight,
+        "compare": compare,
+        "registry": registry,
+    }
+
+
+def _validate(tmp_path: Path, paths: dict[str, Path]) -> dict:
+    return validate(
+        config_path=paths["config"],
+        promotion_path=paths["promotion"],
+        preflight_path=paths["preflight"],
+        gm_compare_path=paths["compare"],
+        activation_registry_path=paths["registry"],
+        expected_account_id=ACCOUNT,
+        output_path=tmp_path / "result.json",
+    )
+
+
+def test_complete_evidence_passes_paper_readiness(tmp_path: Path) -> None:
+    result = _validate(tmp_path, _build_inputs(tmp_path))
+    assert result["passed"] is True
+    assert result["paper_simulation_candidate_ready"] is True
+    assert result["real_money_deployment_allowed"] is False
+
+
+def test_volume_mismatch_fails_closed(tmp_path: Path) -> None:
+    paths = _build_inputs(tmp_path)
+    payload = json.loads(paths["compare"].read_text(encoding="utf-8"))
+    payload["fill_comparison"]["volume_mismatch_keys"] = 1
+    _write_json(paths["compare"], payload)
+    result = _validate(tmp_path, paths)
+    assert result["passed"] is False
+    assert "gm_compare.volume_mismatch_keys" in {
+        row["name"] for row in result["failed_checks"]
+    }
+
+
+def test_pending_execution_fails_closed(tmp_path: Path) -> None:
+    paths = _build_inputs(tmp_path)
+    lines = paths["registry"].read_text(encoding="utf-8").splitlines()
+    record = json.loads(lines[-1])
+    record["metrics"]["pending_execution_symbols"] = ["SZSE.300001"]
+    record.pop("record_hash")
+    from paper_activation_registry import _canonical_hash
+
+    record["record_hash"] = _canonical_hash(record)
+    lines[-1] = json.dumps(record, sort_keys=True)
+    paths["registry"].write_text("\n".join(lines) + "\n", encoding="utf-8")
+    result = _validate(tmp_path, paths)
+    assert result["passed"] is False
+    assert "paper.pending_execution" in {
+        row["name"] for row in result["failed_checks"]
+    }
+
+
+def test_paper_dates_must_follow_untouched_holdout(tmp_path: Path) -> None:
+    paths = _build_inputs(tmp_path)
+    evidence_path = Path(
+        json.loads(paths["promotion"].read_text(encoding="utf-8"))["evidence"]
+    )
+    _write_json(evidence_path, {"holdout": {"end": "2026-07-31"}})
+    result = _validate(tmp_path, paths)
+    assert result["passed"] is False
+    assert "paper.after_untouched_holdout" in {
+        row["name"] for row in result["failed_checks"]
+    }
+
+
+def test_unexpected_rejection_fails_session_quality(tmp_path: Path) -> None:
+    paths = _build_inputs(tmp_path)
+    lines = paths["registry"].read_text(encoding="utf-8").splitlines()
+    record = json.loads(lines[-1])
+    record["metrics"]["unexpected_rejected_orders"] = 1
+    record.pop("record_hash")
+    from paper_activation_registry import _canonical_hash
+
+    record["record_hash"] = _canonical_hash(record)
+    lines[-1] = json.dumps(record, sort_keys=True)
+    paths["registry"].write_text("\n".join(lines) + "\n", encoding="utf-8")
+    result = _validate(tmp_path, paths)
+    assert "paper.unexpected_reject_sessions" in {
+        row["name"] for row in result["failed_checks"]
+    }
+
+
+def test_latest_unresolved_sell_fails_even_when_market_restricted(
+    tmp_path: Path,
+) -> None:
+    paths = _build_inputs(tmp_path)
+    lines = paths["registry"].read_text(encoding="utf-8").splitlines()
+    record = json.loads(lines[-1])
+    record["metrics"]["unresolved_rejected_sell_symbol_list"] = [
+        "SZSE.300001"
+    ]
+    record.pop("record_hash")
+    from paper_activation_registry import _canonical_hash
+
+    record["record_hash"] = _canonical_hash(record)
+    lines[-1] = json.dumps(record, sort_keys=True)
+    paths["registry"].write_text("\n".join(lines) + "\n", encoding="utf-8")
+    result = _validate(tmp_path, paths)
+    assert "paper.latest_unresolved_sell_symbols" in {
+        row["name"] for row in result["failed_checks"]
+    }
+
+
+def test_duplicate_finalized_session_for_trade_date_fails_closed(
+    tmp_path: Path,
+) -> None:
+    paths = _build_inputs(tmp_path)
+    day = pd.Timestamp("2026-07-01")
+    identity = {
+        "activation_schema_version": 1,
+        "run_id": "duplicate-run",
+        "activation_id": "duplicate-activation",
+        "strategy_id": "paper-strategy",
+        "account_id": ACCOUNT,
+        "run_mode": "LIVE",
+        "trading_env": "PAPER",
+        "trade_date": day.strftime("%Y-%m-%d"),
+        "signal_date": (day - pd.offsets.BDay(1)).strftime("%Y-%m-%d"),
+    }
+    from paper_activation_registry import _canonical_hash
+
+    records = [
+        json.loads(line)
+        for line in paths["registry"].read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    previous_hash = records[-1]["record_hash"]
+    for event, timestamp, metrics in (
+        (EVENT_STARTED, day + pd.Timedelta(hours=10), {}),
+        (
+            EVENT_READY,
+            day + pd.Timedelta(hours=10, minutes=1),
+            {"position_sync_succeeded": True},
+        ),
+        (
+            EVENT_FINALIZED,
+            day + pd.Timedelta(hours=15),
+            {
+                "rebalance_events": 1,
+                "pending_target_order_symbols": [],
+                "pending_execution_symbols": [],
+                "forbidden_clear_pending": [],
+                "pending_buy_symbols": [],
+                "position_sync_succeeded_at_finalize": True,
+                "session_metrics_schema_version": 1,
+                "unexpected_rejected_orders": 0,
+                "unexplained_target_volume_abs_diff": 0,
+                "unresolved_rejected_sell_symbol_list": [],
+            },
+        ),
+    ):
+        record = {
+            **identity,
+            "event": event,
+            "timestamp": timestamp.isoformat(),
+            "metrics": metrics,
+            "previous_hash": previous_hash,
+        }
+        record["record_hash"] = _canonical_hash(record)
+        records.append(record)
+        previous_hash = record["record_hash"]
+    paths["registry"].write_text(
+        "\n".join(json.dumps(record, sort_keys=True) for record in records) + "\n",
+        encoding="utf-8",
+    )
+
+    result = _validate(tmp_path, paths)
+
+    assert "paper.one_finalized_session_per_trade_date" in {
+        row["name"] for row in result["failed_checks"]
+    }

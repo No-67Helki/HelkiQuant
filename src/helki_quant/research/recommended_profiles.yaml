@@ -1,0 +1,76 @@
+status: research_only_not_approved_for_simulation_or_live
+source_evidence:
+  daily_pool: cn_data_research_pit_2046
+  outer_variant: pit_simple
+  middle_variant: pit_de2_srfs_es
+  oof_folds: 6
+  note: These profiles reuse the research OOF folds and still require an untouched holdout.
+
+shared:
+  min_listing_days: 250
+  min_20d_avg_amount: 100000000
+  top_k: 100
+  buffer_k: 200
+  rebalance_every_trading_days: 30
+  max_board_fraction: 1.0
+  middle_model:
+    type: CatBoostDEnsemble
+    num_models: 2
+    enable_sample_reweighting: true
+    enable_feature_selection: true
+    early_stopping: true
+
+profiles:
+  growth:
+    experiment: B
+    outer_risk_budget_enabled: false
+    base_oof:
+      median_fold_return: 0.05827022697169981
+      worst_fold_return: 0.009154288668000055
+      positive_fold_ratio: 1.0
+      median_fold_max_drawdown: 0.05410528808814325
+    purpose: Maximize diversified cross-sectional alpha at full exposure.
+  balanced:
+    experiment: C
+    outer_dynamic_risk_budget_enabled: false
+    fixed_risk_budget: 0.6
+    base_oof:
+      median_fold_return: 0.02138773961939988
+      worst_fold_return: 0.009422321327800187
+      positive_fold_ratio: 1.0
+      median_fold_max_drawdown: 0.02520622655339378
+    purpose: Use simple fixed sizing while the dynamic outer mapping remains meta-unstable.
+  defensive:
+    experiment: C
+    outer_dynamic_risk_budget_enabled: false
+    fixed_risk_budget: 0.4
+    base_oof:
+      median_fold_return: 0.011163633999999756
+      worst_fold_return: 0.00499931000000009
+      positive_fold_ratio: 1.0
+      median_fold_max_drawdown: 0.013769086268955597
+    purpose: Simple low-exposure fallback without relying on dynamic outer timing.
+
+experimental_profiles:
+  inverse_outer_overextension:
+    experiment: C
+    outer_lookback: 40
+    risk_base: 0.4
+    risk_slope: -0.15
+    risk_min: 0.4
+    risk_max: 1.0
+    full_oof_result:
+      median_fold_return: 0.04161297448900003
+      worst_fold_return: 0.00499931000000009
+      positive_fold_ratio: 1.0
+      median_fold_max_drawdown: 0.020510018003268193
+    rejection_reason: Leave-one-fold-out meta-selection produced a negative held-out fold.
+
+promotion_gates:
+  daily_research_status: constraints_and_fixed_sizing_passed_meta_selection_not_untouched_holdout
+  remaining:
+    - Reserve and pass a new untouched holdout.
+    - Acquire missing 2026 minute data and rebuild the 80-stock minute pool.
+    - Align the inner label to executable net returns and run full minute replay.
+    - Add point-in-time industry metadata and enforce an industry concentration limit.
+    - Verify production-parity feature and inference paths before paper simulation.
