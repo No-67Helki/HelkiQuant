@@ -8,8 +8,12 @@ import numpy as np
 import pandas as pd
 from catboost import CatBoostClassifier
 
-from evaluate_held_intraday_decision_model import auc_score
-from inner_t0_bidirectional_engine import percentile_score
+try:
+    from .evaluate_held_intraday_decision_model import auc_score
+    from .inner_t0_bidirectional_engine import percentile_score
+except ImportError:  # pragma: no cover - direct script compatibility
+    from evaluate_held_intraday_decision_model import auc_score
+    from inner_t0_bidirectional_engine import percentile_score
 
 
 def score_models(

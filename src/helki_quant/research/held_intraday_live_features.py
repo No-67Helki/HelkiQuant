@@ -5,7 +5,10 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from held_intraday_factor_engineering import add_realtime_reproducible_factors
+try:
+    from .held_intraday_factor_engineering import add_realtime_reproducible_factors
+except ImportError:  # pragma: no cover - packaged GmQuant compatibility
+    from held_intraday_factor_engineering import add_realtime_reproducible_factors
 
 
 DECISION_MINUTES = {"1000": 10 * 60}

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -9,10 +11,38 @@ import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1]
-RESEARCH = ROOT / "src" / "helki_quant" / "research"
-sys.path.insert(0, str(RESEARCH))
+SRC = ROOT / "src"
+sys.path.insert(0, str(SRC))
 
-import build_synchronized_inner_shadow_release as sync_release  # noqa: E402
+from helki_quant.research import (  # noqa: E402
+    build_synchronized_inner_shadow_release as sync_release,
+)
+
+
+def test_synchronized_release_cli_starts_from_package_layout() -> None:
+    environment = os.environ.copy()
+    existing_pythonpath = environment.get("PYTHONPATH")
+    environment["PYTHONPATH"] = str(SRC) + (
+        os.pathsep + existing_pythonpath if existing_pythonpath else ""
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "helki_quant.research.build_synchronized_inner_shadow_release",
+            "--help",
+        ],
+        cwd=ROOT,
+        env=environment,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "--outer-package" in result.stdout
+    assert "--model-manifest" in result.stdout
 
 
 def _outer_package(

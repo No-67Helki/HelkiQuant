@@ -7,11 +7,18 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from replay_held_intraday_t0 import (
-    concentration_metrics,
-    max_drawdown,
-    replay_fold_metrics,
-)
+try:
+    from .replay_held_intraday_t0 import (
+        concentration_metrics,
+        max_drawdown,
+        replay_fold_metrics,
+    )
+except ImportError:  # pragma: no cover - direct script compatibility
+    from replay_held_intraday_t0 import (
+        concentration_metrics,
+        max_drawdown,
+        replay_fold_metrics,
+    )
 
 
 def filter_component(

@@ -8,12 +8,20 @@ from typing import Any
 
 import pandas as pd
 
-from build_inner_multidecision_shadow_candidate import (
-    ORDER_CALL_NAMES,
-    called_function_names,
-    sha256_file,
-    target_snapshot,
-)
+try:
+    from .build_inner_multidecision_shadow_candidate import (
+        ORDER_CALL_NAMES,
+        called_function_names,
+        sha256_file,
+        target_snapshot,
+    )
+except ImportError:  # pragma: no cover - direct script execution compatibility
+    from build_inner_multidecision_shadow_candidate import (
+        ORDER_CALL_NAMES,
+        called_function_names,
+        sha256_file,
+        target_snapshot,
+    )
 
 
 HERE = Path(__file__).resolve().parent

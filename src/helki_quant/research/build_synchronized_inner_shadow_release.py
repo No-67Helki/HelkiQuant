@@ -7,12 +7,20 @@ from typing import Any
 
 import pandas as pd
 
-from build_inner_multidecision_shadow_candidate import (
-    DEFAULT_MODEL_MANIFEST,
-    build_candidate as build_inner_candidate,
-    sha256_file,
-)
-from preflight_inner_multidecision_shadow_candidate import run_preflight
+try:
+    from .build_inner_multidecision_shadow_candidate import (
+        DEFAULT_MODEL_MANIFEST,
+        build_candidate as build_inner_candidate,
+        sha256_file,
+    )
+    from .preflight_inner_multidecision_shadow_candidate import run_preflight
+except ImportError:  # pragma: no cover - direct script execution compatibility
+    from build_inner_multidecision_shadow_candidate import (
+        DEFAULT_MODEL_MANIFEST,
+        build_candidate as build_inner_candidate,
+        sha256_file,
+    )
+    from preflight_inner_multidecision_shadow_candidate import run_preflight
 
 
 def _read_json(path: Path) -> dict[str, Any]:

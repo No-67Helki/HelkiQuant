@@ -15,6 +15,7 @@ RESEARCH = ROOT / "src" / "helki_quant" / "research"
 sys.path.insert(0, str(RESEARCH))
 
 from validate_frozen_strategy_promotion import (  # noqa: E402
+    build_canonical_binding,
     build_evidence,
     sha256_file,
     validate,
@@ -62,6 +63,36 @@ PROFILE_PARAMETERS = {
         "cost_name": "stress",
     },
 }
+
+
+def test_incomplete_canonical_window_fails_before_return_evaluation(
+    tmp_path: Path,
+) -> None:
+    dates = pd.bdate_range("2026-06-08", periods=39)
+    readiness = tmp_path / "readiness.json"
+    readiness.write_text(
+        json.dumps(
+            {
+                "passed": False,
+                "data_integrity_passed": True,
+                "promotion_window_ready": False,
+                "profile_frozen": True,
+                "return_metrics_evaluated": False,
+                "holdout": {
+                    "sessions": 39,
+                    "required_sessions": 60,
+                    "remaining_sessions": 21,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="canonical readiness has not passed.*promotion_window_ready",
+    ):
+        build_canonical_binding(readiness, dates)
 
 
 def _write(path: Path, text: str) -> Path:

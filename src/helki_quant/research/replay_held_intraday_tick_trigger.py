@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 from pathlib import Path
 
 import numpy as np
@@ -10,20 +9,31 @@ import pandas as pd
 
 
 HERE = Path(__file__).resolve().parent
-if str(HERE) not in sys.path:
-    sys.path.insert(0, str(HERE))
 
-from build_held_intraday_decision_dataset import load_minute_for_symbol, to_raw_inst  # noqa: E402
-from build_minute_staging import build_minute_source_index  # noqa: E402
-from replay_held_intraday_t0 import (  # noqa: E402
-    concentration_metrics,
-    estimate_fee,
-    max_drawdown,
-    min_lot,
-    parse_float_list,
-    parse_int_list,
-    replay_fold_metrics,
-)
+try:
+    from .build_held_intraday_decision_dataset import load_minute_for_symbol, to_raw_inst
+    from .build_minute_staging import build_minute_source_index
+    from .replay_held_intraday_t0 import (
+        concentration_metrics,
+        estimate_fee,
+        max_drawdown,
+        min_lot,
+        parse_float_list,
+        parse_int_list,
+        replay_fold_metrics,
+    )
+except ImportError:  # pragma: no cover - direct script compatibility
+    from build_held_intraday_decision_dataset import load_minute_for_symbol, to_raw_inst
+    from build_minute_staging import build_minute_source_index
+    from replay_held_intraday_t0 import (
+        concentration_metrics,
+        estimate_fee,
+        max_drawdown,
+        min_lot,
+        parse_float_list,
+        parse_int_list,
+        replay_fold_metrics,
+    )
 
 
 def load_trigger_extrema(

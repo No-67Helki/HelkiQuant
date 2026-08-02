@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 from pathlib import Path
 
 import numpy as np
@@ -13,17 +12,24 @@ HERE = Path(__file__).resolve().parent
 MULTI_LAYER = HERE.parent
 REPO_ROOT = HERE.parents[2]
 DATA = REPO_ROOT / "data"
-if str(HERE) not in sys.path:
-    sys.path.insert(0, str(HERE))
-
-from build_minute_staging import (  # noqa: E402
-    REQUIRED,
-    MinuteSourceIndex,
-    build_minute_source_index,
-    files_for_instrument,
-    read_one,
-)
-from held_intraday_factor_engineering import add_realtime_reproducible_factors  # noqa: E402
+try:
+    from .build_minute_staging import (
+        REQUIRED,
+        MinuteSourceIndex,
+        build_minute_source_index,
+        files_for_instrument,
+        read_one,
+    )
+    from .held_intraday_factor_engineering import add_realtime_reproducible_factors
+except ImportError:  # pragma: no cover - direct script compatibility
+    from build_minute_staging import (
+        REQUIRED,
+        MinuteSourceIndex,
+        build_minute_source_index,
+        files_for_instrument,
+        read_one,
+    )
+    from held_intraday_factor_engineering import add_realtime_reproducible_factors
 
 
 DECISION_MINUTES = {

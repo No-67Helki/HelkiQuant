@@ -7,11 +7,18 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from build_held_intraday_decision_dataset import add_cross_sectional_features
-from held_intraday_factor_engineering import (
-    REALTIME_ENGINEERED_FEATURES,
-    add_realtime_reproducible_factors,
-)
+try:
+    from .build_held_intraday_decision_dataset import add_cross_sectional_features
+    from .held_intraday_factor_engineering import (
+        REALTIME_ENGINEERED_FEATURES,
+        add_realtime_reproducible_factors,
+    )
+except ImportError:  # pragma: no cover - direct script compatibility
+    from build_held_intraday_decision_dataset import add_cross_sectional_features
+    from held_intraday_factor_engineering import (
+        REALTIME_ENGINEERED_FEATURES,
+        add_realtime_reproducible_factors,
+    )
 
 
 def _normalize_date(series: pd.Series) -> pd.Series:

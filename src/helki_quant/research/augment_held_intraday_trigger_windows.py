@@ -6,14 +6,24 @@ from pathlib import Path
 
 import pandas as pd
 
-from build_held_intraday_decision_dataset import (
-    TRIGGER_BUYBACK_WINDOWS,
-    TRIGGER_DISTANCES,
-    TRIGGER_TOUCH_BUFFERS,
-    add_trigger_aligned_labels,
-    trigger_label_prefix,
-)
-from evaluate_held_intraday_decision_model import FEATURE_COLS
+try:
+    from .build_held_intraday_decision_dataset import (
+        TRIGGER_BUYBACK_WINDOWS,
+        TRIGGER_DISTANCES,
+        TRIGGER_TOUCH_BUFFERS,
+        add_trigger_aligned_labels,
+        trigger_label_prefix,
+    )
+    from .evaluate_held_intraday_decision_model import FEATURE_COLS
+except ImportError:  # pragma: no cover - direct script compatibility
+    from build_held_intraday_decision_dataset import (
+        TRIGGER_BUYBACK_WINDOWS,
+        TRIGGER_DISTANCES,
+        TRIGGER_TOUCH_BUFFERS,
+        add_trigger_aligned_labels,
+        trigger_label_prefix,
+    )
+    from evaluate_held_intraday_decision_model import FEATURE_COLS
 
 
 def augment(

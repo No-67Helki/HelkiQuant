@@ -5,7 +5,10 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from held_intraday_live_features import minimum_lot
+try:
+    from .held_intraday_live_features import minimum_lot
+except ImportError:  # pragma: no cover - packaged GmQuant compatibility
+    from held_intraday_live_features import minimum_lot
 
 
 def percentile_score(raw_score: float, sorted_calibration: np.ndarray) -> float:
