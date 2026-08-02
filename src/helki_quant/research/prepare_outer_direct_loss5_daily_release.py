@@ -16,7 +16,10 @@ from audit_gm_target_csv import audit as audit_target
 from build_forbidden_st_symbols import build as build_forbidden_symbols
 from build_outer_middle_paper_launch_candidate import build_candidate, sha256_file
 from build_paper_forward_config import build as build_forward_config
-from build_synchronized_inner_shadow_release import build_synchronized_shadow
+from build_synchronized_inner_shadow_release import (
+    DEFAULT_MODEL_MANIFEST as DEFAULT_INNER_SHADOW_MODEL_MANIFEST,
+    build_synchronized_shadow,
+)
 from export_paper_forward_gm_targets import export_targets
 from filter_gm_targets_market_state import filter_targets
 
@@ -254,10 +257,21 @@ def prepare_forbidden_symbols(
         output,
         report_path,
         overrides,
+        pit_market_state_path=(
+            args.pit_market_state.resolve()
+            if getattr(args, "pit_market_state", None)
+            else None
+        ),
+        as_of_date=args.signal_date,
     )
     return output, {
         "mode": "rebuilt_for_release",
         "stock_list": _artifact(stock_list),
+        "pit_market_state": (
+            _artifact(args.pit_market_state.resolve())
+            if getattr(args, "pit_market_state", None)
+            else None
+        ),
         "overrides": _artifact(overrides),
         "output": _artifact(output),
         "report": _artifact(report_path),
@@ -1089,6 +1103,11 @@ def prepare_release(args: argparse.Namespace) -> dict[str, Any]:
                 outer_package=package_dir,
                 output_dir=inner_shadow_dir,
                 as_of_date=pd.Timestamp(args.as_of_date),
+                model_manifest=(
+                    args.inner_shadow_model_manifest.resolve()
+                    if getattr(args, "inner_shadow_model_manifest", None)
+                    else DEFAULT_INNER_SHADOW_MODEL_MANIFEST
+                ),
                 historical_smoke=bool(args.historical_smoke),
                 max_signal_age_days=4,
             )
@@ -1190,6 +1209,7 @@ def parser() -> argparse.ArgumentParser:
         default=DATA / "forbidden_st_symbols_20260605.csv",
     )
     p.add_argument("--stock-list", type=Path, default=DATA / "股票列表.csv")
+    p.add_argument("--pit-market-state", type=Path)
     p.add_argument(
         "--forbidden-overrides",
         type=Path,
@@ -1225,6 +1245,11 @@ def parser() -> argparse.ArgumentParser:
         "--require-inner-shadow",
         action="store_true",
         help="Fail the release when the synchronized no-order inner package cannot be built.",
+    )
+    p.add_argument(
+        "--inner-shadow-model-manifest",
+        type=Path,
+        help="Frozen no-order inner model manifest to observe alongside PAPER.",
     )
     return p
 

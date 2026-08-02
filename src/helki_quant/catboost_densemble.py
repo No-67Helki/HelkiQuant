@@ -128,6 +128,7 @@ class CatBoostDEnsemble(Model, FeatureInt):
         self.ensemble_eval_rows = (
             None if ensemble_eval_rows is None else int(ensemble_eval_rows)
         )
+
         self.random_seed = int(random_seed)
         self.collapse_by_datetime = bool(collapse_by_datetime)
 
@@ -150,6 +151,14 @@ class CatBoostDEnsemble(Model, FeatureInt):
         self.sub_features: list[pd.Index] = []
         self._rng = np.random.default_rng(self.random_seed)
         self.logger = get_module_logger("CatBoostDEnsemble")
+
+    def __setstate__(self, state):
+        """Restore classification flags absent from older frozen artifacts."""
+        self.__dict__.update(state)
+        loss = getattr(self, "loss", "RMSE")
+        self._is_multiclass = loss == "MultiClass"
+        self._is_binary = loss == "Logloss"
+        self._is_cls = self._is_multiclass or self._is_binary
 
     # ------------------------------------------------------------------ #
     # 数据准备
