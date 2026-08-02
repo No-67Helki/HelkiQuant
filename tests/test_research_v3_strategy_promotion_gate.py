@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -269,6 +270,36 @@ def _make_alpha_manifest(
     return path
 
 
+def _make_canonical_readiness(
+    tmp_path: Path,
+    dates: pd.DatetimeIndex,
+) -> tuple[Path, Path]:
+    manifest = _write(tmp_path / "canonical_manifest.json", "{\"version\": 1}\n")
+    calendar_hash = hashlib.sha256(
+        "\n".join(day.strftime("%Y-%m-%d") for day in dates).encode("ascii")
+    ).hexdigest().upper()
+    readiness = {
+        "status": "canonical_market_data_readiness",
+        "passed": True,
+        "data_integrity_passed": True,
+        "promotion_window_ready": True,
+        "profile_frozen": True,
+        "return_metrics_evaluated": False,
+        "canonical_manifest": _artifact(manifest),
+        "holdout": {
+            "first_session": str(dates[0].date()),
+            "last_session": str(dates[-1].date()),
+            "sessions": len(dates),
+            "required_sessions": 60,
+            "remaining_sessions": 0,
+            "calendar_sha256": calendar_hash,
+        },
+    }
+    path = tmp_path / "canonical_readiness.json"
+    path.write_text(json.dumps(readiness), encoding="utf-8")
+    return path, manifest
+
+
 def _complete_fixture(tmp_path: Path, start: str = "2026-01-02"):
     contract, generator = _make_contract(tmp_path)
     dates = pd.bdate_range(start, periods=65)
@@ -302,16 +333,22 @@ def _complete_fixture(tmp_path: Path, start: str = "2026-01-02"):
         middle=alpha_sources["middle_prediction"],
         forbidden=alpha_sources["forbidden_symbols"],
     )
-    return contract, {"champion": champion, "capital": capital, "alpha": alpha}, {
-        "alpha": alpha_manifest
-    }
+    readiness, manifest = _make_canonical_readiness(tmp_path, dates)
+    return (
+        contract,
+        {"champion": champion, "capital": capital, "alpha": alpha},
+        {"alpha": alpha_manifest},
+        readiness,
+        manifest,
+    )
 
 
 def test_complete_untouched_evidence_promotes_best_challenger(tmp_path):
-    contract, logs, manifests = _complete_fixture(tmp_path)
+    contract, logs, manifests, readiness, _ = _complete_fixture(tmp_path)
     evidence_path = tmp_path / "evidence.json"
-    evidence = build_evidence(contract, logs, manifests, evidence_path)
+    evidence = build_evidence(contract, logs, manifests, evidence_path, readiness)
     assert evidence["holdout"]["sessions"] == 65
+    assert evidence["schema_version"] == 2
 
     report = validate(contract, evidence_path, tmp_path / "promotion.json")
     assert report["passed"] is True
@@ -322,33 +359,41 @@ def test_complete_untouched_evidence_promotes_best_challenger(tmp_path):
 
 
 def test_holdout_must_start_after_frozen_training_boundary(tmp_path):
-    contract, logs, manifests = _complete_fixture(tmp_path, start="2025-12-01")
+    contract, logs, manifests, readiness, _ = _complete_fixture(
+        tmp_path, start="2025-12-01"
+    )
     with pytest.raises(ValueError, match="overlaps frozen data boundary"):
-        build_evidence(contract, logs, manifests, tmp_path / "evidence.json")
+        build_evidence(
+            contract, logs, manifests, tmp_path / "evidence.json", readiness
+        )
 
 
 def test_replay_source_tampering_is_rejected(tmp_path):
-    contract, logs, manifests = _complete_fixture(tmp_path)
+    contract, logs, manifests, readiness, _ = _complete_fixture(tmp_path)
     audit = json.loads((logs["capital"] / "audit.json").read_text(encoding="utf-8"))
     middle_path = Path(audit["source_provenance"]["middle_prediction"]["path"])
     middle_path.write_text("tampered\n", encoding="utf-8")
     with pytest.raises(ValueError, match="provenance hash mismatch"):
-        build_evidence(contract, logs, manifests, tmp_path / "evidence.json")
+        build_evidence(
+            contract, logs, manifests, tmp_path / "evidence.json", readiness
+        )
 
 
 def test_alpha_health_policy_change_is_rejected(tmp_path):
-    contract, logs, manifests = _complete_fixture(tmp_path)
+    contract, logs, manifests, readiness, _ = _complete_fixture(tmp_path)
     manifest = json.loads(manifests["alpha"].read_text(encoding="utf-8"))
     manifest["policy"]["health_threshold"] = -0.1
     manifests["alpha"].write_text(json.dumps(manifest), encoding="utf-8")
     with pytest.raises(ValueError, match="alpha-health policy mismatch"):
-        build_evidence(contract, logs, manifests, tmp_path / "evidence.json")
+        build_evidence(
+            contract, logs, manifests, tmp_path / "evidence.json", readiness
+        )
 
 
 def test_contract_change_after_evaluation_invalidates_evidence(tmp_path):
-    contract, logs, manifests = _complete_fixture(tmp_path)
+    contract, logs, manifests, readiness, _ = _complete_fixture(tmp_path)
     evidence_path = tmp_path / "evidence.json"
-    build_evidence(contract, logs, manifests, evidence_path)
+    build_evidence(contract, logs, manifests, evidence_path, readiness)
     payload = json.loads(contract.read_text(encoding="utf-8"))
     payload["description"] = "changed after evaluation"
     contract.write_text(json.dumps(payload), encoding="utf-8")
@@ -359,6 +404,50 @@ def test_contract_change_after_evaluation_invalidates_evidence(tmp_path):
         item["name"] == "evidence.contract_hash"
         for item in report["failed_checks"]
     )
+
+
+def test_replay_calendar_must_match_canonical_readiness(tmp_path):
+    contract, logs, manifests, readiness, _ = _complete_fixture(tmp_path)
+    payload = json.loads(readiness.read_text(encoding="utf-8"))
+    payload["holdout"]["calendar_sha256"] = "0" * 64
+    readiness.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="does not match canonical readiness"):
+        build_evidence(
+            contract, logs, manifests, tmp_path / "evidence.json", readiness
+        )
+
+
+def test_canonical_manifest_tampering_invalidates_promotion(tmp_path):
+    contract, logs, manifests, readiness, canonical_manifest = _complete_fixture(
+        tmp_path
+    )
+    evidence_path = tmp_path / "evidence.json"
+    build_evidence(contract, logs, manifests, evidence_path, readiness)
+    canonical_manifest.write_text("tampered\n", encoding="utf-8")
+
+    report = validate(contract, evidence_path, tmp_path / "promotion.json")
+
+    assert report["passed"] is False
+    assert "evidence.canonical_binding" in {
+        item["name"] for item in report["failed_checks"]
+    }
+
+
+def test_legacy_unbound_evidence_schema_is_rejected(tmp_path):
+    contract, logs, manifests, readiness, _ = _complete_fixture(tmp_path)
+    evidence_path = tmp_path / "evidence.json"
+    build_evidence(contract, logs, manifests, evidence_path, readiness)
+    payload = json.loads(evidence_path.read_text(encoding="utf-8"))
+    payload["schema_version"] = 1
+    payload.pop("canonical_market_data")
+    evidence_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    report = validate(contract, evidence_path, tmp_path / "promotion.json")
+
+    failed = {item["name"] for item in report["failed_checks"]}
+    assert "evidence.schema_version" in failed
+    assert "evidence.canonical_binding" in failed
 
 
 def test_missing_future_evidence_fails_closed(tmp_path):

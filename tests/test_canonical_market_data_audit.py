@@ -74,6 +74,8 @@ def test_inactive_target_without_minute_rows_does_not_fail_integrity(tmp_path: P
     assert report["holdout"]["remaining_sessions"] == 1
     assert report["minute"]["inactive_targets_without_rows"] == ["sz300344"]
     assert report["return_metrics_evaluated"] is False
+    assert len(report["holdout"]["calendar_sha256"]) == 64
+    assert len(report["canonical_manifest"]["sha256"]) == 64
 
 
 def test_missing_active_target_fails_integrity(tmp_path: Path) -> None:

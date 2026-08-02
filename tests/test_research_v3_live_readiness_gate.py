@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import subprocess
@@ -33,6 +34,15 @@ def _write_json(path: Path, payload: dict) -> Path:
     return path
 
 
+def _artifact(path: Path) -> dict[str, object]:
+    digest = hashlib.sha256(path.read_bytes()).hexdigest().upper()
+    return {
+        "path": str(path.resolve()),
+        "sha256": digest,
+        "bytes": path.stat().st_size,
+    }
+
+
 def _build_inputs(tmp_path: Path, sessions: int = 3) -> dict[str, Path]:
     config = _write_json(
         tmp_path / "config.json",
@@ -50,9 +60,10 @@ def _build_inputs(tmp_path: Path, sessions: int = 3) -> dict[str, Path]:
             },
         },
     )
-    evidence = _write_json(
-        tmp_path / "evidence.json",
-        {"holdout": {"end": "2026-06-30"}},
+    canonical_dates = pd.bdate_range("2026-04-08", periods=60)
+    canonical_manifest = _write_json(
+        tmp_path / "canonical_manifest.json",
+        {"version": "test"},
     )
     canonical_readiness = _write_json(
         tmp_path / "canonical_readiness.json",
@@ -62,13 +73,44 @@ def _build_inputs(tmp_path: Path, sessions: int = 3) -> dict[str, Path]:
             "promotion_window_ready": True,
             "profile_frozen": True,
             "return_metrics_evaluated": False,
+            "canonical_manifest": _artifact(canonical_manifest),
             "holdout": {
-                "first_session": "2026-04-08",
-                "last_session": "2026-06-30",
+                "first_session": str(canonical_dates[0].date()),
+                "last_session": str(canonical_dates[-1].date()),
                 "sessions": 60,
                 "required_sessions": 60,
                 "remaining_sessions": 0,
+                "calendar_sha256": hashlib.sha256(
+                    "\n".join(
+                        day.strftime("%Y-%m-%d") for day in canonical_dates
+                    ).encode("ascii")
+                ).hexdigest().upper(),
             },
+        },
+    )
+    canonical_binding = {
+        "schema_version": 1,
+        "readiness": _artifact(canonical_readiness),
+        "manifest": _artifact(canonical_manifest),
+        "holdout": {
+            "start": str(canonical_dates[0].date()),
+            "end": str(canonical_dates[-1].date()),
+            "sessions": 60,
+            "calendar_sha256": hashlib.sha256(
+                "\n".join(
+                    day.strftime("%Y-%m-%d") for day in canonical_dates
+                ).encode("ascii")
+            ).hexdigest().upper(),
+        },
+    }
+    evidence = _write_json(
+        tmp_path / "evidence.json",
+        {
+            "schema_version": 2,
+            "holdout": {
+                "end": str(canonical_dates[-1].date()),
+            },
+            "canonical_market_data": canonical_binding,
         },
     )
     promotion = _write_json(
@@ -78,6 +120,8 @@ def _build_inputs(tmp_path: Path, sessions: int = 3) -> dict[str, Path]:
             "paper_candidate_promotion_allowed": True,
             "selected_profile_id": PROFILE,
             "evidence": str(evidence.resolve()),
+            "evidence_sha256": _artifact(evidence)["sha256"],
+            "canonical_market_data": canonical_binding,
         },
     )
     last_date = pd.Timestamp("2026-07-01") + pd.offsets.BDay(sessions - 1)
@@ -183,6 +227,22 @@ def test_complete_evidence_passes_paper_readiness(tmp_path: Path) -> None:
     assert result["passed"] is True
     assert result["paper_simulation_candidate_ready"] is True
     assert result["real_money_deployment_allowed"] is False
+
+
+def test_promotion_evidence_tampering_breaks_canonical_chain(tmp_path: Path) -> None:
+    paths = _build_inputs(tmp_path)
+    promotion = json.loads(paths["promotion"].read_text(encoding="utf-8"))
+    evidence_path = Path(promotion["evidence"])
+    evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+    evidence["tampered"] = True
+    evidence_path.write_text(json.dumps(evidence), encoding="utf-8")
+
+    result = _validate(tmp_path, paths)
+
+    assert result["passed"] is False
+    assert "promotion.canonical_evidence_chain" in {
+        row["name"] for row in result["failed_checks"]
+    }
 
 
 def test_incomplete_canonical_window_fails_even_with_passing_promotion(

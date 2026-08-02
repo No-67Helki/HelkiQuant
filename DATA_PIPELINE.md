@@ -75,6 +75,28 @@ the canonical report reaches 60 complete post-cutoff sessions. At 60 sessions,
 run one frozen untouched replay. Only a passing frozen replay may proceed to a
 new target package and at least 20 subsequent audited GmQuant PAPER sessions.
 
+Build promotion evidence only after the canonical report passes. Every frozen
+profile must use the exact same audited calendar:
+
+```powershell
+helki-promote-frozen build `
+  --contract PATH_TO_FROZEN_CONTRACT.json `
+  --canonical-readiness outputs/canonical_VERSION_readiness.json `
+  --profile-log PROFILE_ID=PATH_TO_PRODUCTION_STYLE_REPLAY `
+  --output outputs/frozen_untouched_evidence.json
+
+helki-promote-frozen validate `
+  --contract PATH_TO_FROZEN_CONTRACT.json `
+  --evidence outputs/frozen_untouched_evidence.json `
+  --output outputs/frozen_promotion.json
+```
+
+Repeat `--profile-log` and, where required by the frozen contract,
+`--profile-manifest` once per profile. Evidence creation is immutable and binds
+the exact canonical readiness report, canonical manifest, and session-calendar
+hash. A changed source artifact, different 60-session calendar, or legacy
+unbound evidence fails closed.
+
 ## Current Evidence Snapshot
 
 The `2026-07-31` canonical build has 39 complete post-`2026-06-05`

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
@@ -19,6 +20,14 @@ def read_symbol_file(path: Path) -> set[str]:
         for line in path.read_text(encoding="utf-8-sig").splitlines()
         if line.strip()
     }
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest().upper()
 
 
 def build_report(
@@ -158,12 +167,22 @@ def build_report(
         "profile_frozen": True,
         "return_metrics_evaluated": False,
         "cutoff_excluded": cutoff.strftime("%Y-%m-%d"),
+        "canonical_manifest": {
+            "path": str(manifest_path.resolve()),
+            "sha256": sha256_file(manifest_path),
+            "bytes": int(manifest_path.stat().st_size),
+        },
         "holdout": {
             "first_session": sessions.min().strftime("%Y-%m-%d") if len(sessions) else None,
             "last_session": sessions.max().strftime("%Y-%m-%d") if len(sessions) else None,
             "sessions": len(sessions),
             "required_sessions": min_sessions,
             "remaining_sessions": remaining_sessions,
+            "calendar_sha256": hashlib.sha256(
+                "\n".join(
+                    session.strftime("%Y-%m-%d") for session in sessions
+                ).encode("ascii")
+            ).hexdigest().upper(),
         },
         "daily": {
             "passed": daily_complete,

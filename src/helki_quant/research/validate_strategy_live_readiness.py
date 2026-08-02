@@ -99,6 +99,71 @@ def _promotion_holdout_end(promotion: dict[str, Any]) -> pd.Timestamp | None:
     return pd.Timestamp(value).normalize()
 
 
+def _verify_promotion_canonical_chain(
+    *,
+    promotion: dict[str, Any],
+    canonical_readiness_path: Path,
+) -> tuple[bool, dict[str, Any]]:
+    evidence_value = promotion.get("evidence")
+    if not evidence_value:
+        return False, {"error": "promotion evidence path is missing"}
+    evidence_path = Path(str(evidence_value)).resolve()
+    if not evidence_path.is_file():
+        return False, {"error": f"promotion evidence not found: {evidence_path}"}
+    actual_evidence_hash = sha256_file(evidence_path)
+    expected_evidence_hash = str(promotion.get("evidence_sha256") or "").upper()
+    if actual_evidence_hash != expected_evidence_hash:
+        return False, {
+            "error": "promotion evidence hash mismatch",
+            "expected": expected_evidence_hash or None,
+            "actual": actual_evidence_hash,
+        }
+    try:
+        evidence = load_json(evidence_path, "promotion evidence")
+    except json.JSONDecodeError as exc:
+        return False, {"error": f"promotion evidence is invalid JSON: {exc}"}
+    binding = evidence.get("canonical_market_data")
+    try:
+        binding_schema = int(binding.get("schema_version", 0))  # type: ignore[union-attr]
+    except (AttributeError, TypeError, ValueError):
+        binding_schema = 0
+    if not isinstance(binding, dict) or binding_schema != 1:
+        return False, {"error": "promotion evidence has no canonical binding"}
+    if promotion.get("canonical_market_data") != binding:
+        return False, {"error": "promotion report canonical binding mismatch"}
+    if not canonical_readiness_path.is_file():
+        return False, {
+            "error": f"canonical readiness not found: {canonical_readiness_path}"
+        }
+    readiness_record = binding.get("readiness") or {}
+    actual_readiness_hash = sha256_file(canonical_readiness_path)
+    expected_readiness_hash = str(readiness_record.get("sha256") or "").upper()
+    if actual_readiness_hash != expected_readiness_hash:
+        return False, {
+            "error": "canonical readiness hash mismatch",
+            "expected": expected_readiness_hash or None,
+            "actual": actual_readiness_hash,
+        }
+    manifest_record = binding.get("manifest") or {}
+    manifest_path = Path(str(manifest_record.get("path") or "")).resolve()
+    if not manifest_path.is_file():
+        return False, {"error": f"canonical manifest not found: {manifest_path}"}
+    actual_manifest_hash = sha256_file(manifest_path)
+    expected_manifest_hash = str(manifest_record.get("sha256") or "").upper()
+    if actual_manifest_hash != expected_manifest_hash:
+        return False, {
+            "error": "canonical manifest hash mismatch",
+            "expected": expected_manifest_hash or None,
+            "actual": actual_manifest_hash,
+        }
+    return True, {
+        "evidence": artifact(evidence_path),
+        "canonical_readiness": artifact(canonical_readiness_path),
+        "canonical_manifest": artifact(manifest_path),
+        "holdout": binding.get("holdout") or {},
+    }
+
+
 def validate(
     *,
     config_path: Path,
@@ -224,6 +289,17 @@ def validate(
         bool(selected_profile),
         selected_profile or None,
         "non-empty",
+    )
+    canonical_chain_passed, canonical_chain = _verify_promotion_canonical_chain(
+        promotion=promotion,
+        canonical_readiness_path=canonical_readiness_path,
+    )
+    add_check(
+        checks,
+        "promotion.canonical_evidence_chain",
+        canonical_chain_passed,
+        canonical_chain,
+        "immutable evidence -> readiness -> manifest chain",
     )
     holdout_end = _promotion_holdout_end(promotion)
     add_check(

@@ -108,6 +108,134 @@ def verify_frozen_contract(contract: dict[str, Any]) -> dict[str, Any]:
     return verified
 
 
+def calendar_sha256(dates: pd.DatetimeIndex) -> str:
+    return hashlib.sha256(
+        "\n".join(day.strftime("%Y-%m-%d") for day in dates).encode("ascii")
+    ).hexdigest().upper()
+
+
+def build_canonical_binding(
+    readiness_path: Path,
+    dates: pd.DatetimeIndex,
+) -> dict[str, Any]:
+    readiness_path = readiness_path.resolve()
+    readiness = load_json(readiness_path)
+    required_true = (
+        "passed",
+        "data_integrity_passed",
+        "promotion_window_ready",
+        "profile_frozen",
+    )
+    failed = [name for name in required_true if readiness.get(name) is not True]
+    if failed:
+        raise ValueError(f"canonical readiness has not passed: {failed}")
+    if readiness.get("return_metrics_evaluated") is not False:
+        raise ValueError("canonical readiness must precede return evaluation")
+    holdout = readiness.get("holdout") or {}
+    expected = {
+        "start": str(dates[0].date()),
+        "end": str(dates[-1].date()),
+        "sessions": int(len(dates)),
+        "calendar_sha256": calendar_sha256(dates),
+    }
+    observed = {
+        "start": holdout.get("first_session"),
+        "end": holdout.get("last_session"),
+        "sessions": int(holdout.get("sessions") or 0),
+        "calendar_sha256": str(holdout.get("calendar_sha256") or "").upper(),
+    }
+    if observed != expected:
+        raise ValueError(
+            f"replay calendar does not match canonical readiness: "
+            f"observed={observed} expected={expected}"
+        )
+    manifest = verify_artifact(
+        readiness.get("canonical_manifest") or {},
+        "canonical manifest",
+    )
+    return {
+        "schema_version": 1,
+        "readiness": {
+            "path": str(readiness_path),
+            "sha256": sha256_file(readiness_path),
+            "bytes": int(readiness_path.stat().st_size),
+        },
+        "manifest": manifest,
+        "holdout": expected,
+    }
+
+
+def verify_canonical_binding(
+    binding: object,
+    evidence_holdout: dict[str, Any],
+) -> dict[str, Any]:
+    try:
+        schema_version = int(binding.get("schema_version", 0))  # type: ignore[union-attr]
+    except (AttributeError, TypeError, ValueError):
+        schema_version = 0
+    if not isinstance(binding, dict) or schema_version != 1:
+        raise ValueError("evidence has no supported canonical binding")
+    readiness_record = binding.get("readiness") or {}
+    readiness_artifact = verify_artifact(
+        readiness_record,
+        "canonical readiness",
+    )
+    readiness = load_json(Path(readiness_artifact["path"]))
+    for name in (
+        "passed",
+        "data_integrity_passed",
+        "promotion_window_ready",
+        "profile_frozen",
+    ):
+        if readiness.get(name) is not True:
+            raise ValueError(f"canonical readiness no longer passes: {name}")
+    if readiness.get("return_metrics_evaluated") is not False:
+        raise ValueError("canonical readiness was evaluated before promotion")
+    manifest_artifact = verify_artifact(
+        binding.get("manifest") or {},
+        "canonical manifest",
+    )
+    readiness_manifest = readiness.get("canonical_manifest") or {}
+    if (
+        str(readiness_manifest.get("sha256") or "").upper()
+        != manifest_artifact["sha256"]
+    ):
+        raise ValueError("canonical manifest is not the readiness-audited artifact")
+    holdout = binding.get("holdout") or {}
+    readiness_holdout = readiness.get("holdout") or {}
+    expected = {
+        "start": evidence_holdout.get("start"),
+        "end": evidence_holdout.get("end"),
+        "sessions": int(evidence_holdout.get("sessions") or 0),
+        "calendar_sha256": str(
+            evidence_holdout.get("calendar_sha256") or ""
+        ).upper(),
+    }
+    observed = {
+        "start": holdout.get("start"),
+        "end": holdout.get("end"),
+        "sessions": int(holdout.get("sessions") or 0),
+        "calendar_sha256": str(holdout.get("calendar_sha256") or "").upper(),
+    }
+    audited = {
+        "start": readiness_holdout.get("first_session"),
+        "end": readiness_holdout.get("last_session"),
+        "sessions": int(readiness_holdout.get("sessions") or 0),
+        "calendar_sha256": str(
+            readiness_holdout.get("calendar_sha256") or ""
+        ).upper(),
+    }
+    if observed != expected or audited != expected:
+        raise ValueError(
+            "canonical binding, evidence, and readiness calendars do not match"
+        )
+    return {
+        "readiness": readiness_artifact,
+        "manifest": manifest_artifact,
+        "holdout": observed,
+    }
+
+
 def verify_source_provenance(
     provenance: object,
     *,
@@ -315,6 +443,7 @@ def build_evidence(
     profile_logs: dict[str, Path],
     profile_manifests: dict[str, Path],
     output_path: Path,
+    canonical_readiness_path: Path,
 ) -> dict[str, Any]:
     contract_path = contract_path.resolve()
     output_path = output_path.resolve()
@@ -409,8 +538,12 @@ def build_evidence(
         }
 
     assert common_dates is not None
+    canonical_binding = build_canonical_binding(
+        canonical_readiness_path,
+        common_dates,
+    )
     evidence = {
-        "schema_version": 1,
+        "schema_version": 2,
         "status": "frozen_strategy_untouched_evaluation",
         "generated_at": datetime.now().astimezone().isoformat(),
         "contract": {
@@ -423,12 +556,9 @@ def build_evidence(
             "start": str(common_dates[0].date()),
             "end": str(common_dates[-1].date()),
             "sessions": int(len(common_dates)),
-            "calendar_sha256": hashlib.sha256(
-                "\n".join(day.strftime("%Y-%m-%d") for day in common_dates).encode(
-                    "ascii"
-                )
-            ).hexdigest().upper(),
+            "calendar_sha256": calendar_sha256(common_dates),
         },
+        "canonical_market_data": canonical_binding,
         "verified_frozen_artifacts": verified_frozen,
         "profiles": rows,
         "deployment_allowed": False,
@@ -484,6 +614,17 @@ def validate(
         add_check(checks, "evidence.exists", False, False, True)
     else:
         evidence = load_json(evidence_path)
+        try:
+            evidence_schema = int(evidence.get("schema_version", 0))
+        except (TypeError, ValueError):
+            evidence_schema = 0
+        add_check(
+            checks,
+            "evidence.schema_version",
+            evidence_schema == 2,
+            evidence_schema,
+            2,
+        )
         expected_contract_hash = sha256_file(contract_path)
         observed_contract_hash = str(
             (evidence.get("contract") or {}).get("sha256") or ""
@@ -496,6 +637,26 @@ def validate(
             expected_contract_hash,
         )
         holdout = evidence.get("holdout") or {}
+        try:
+            canonical_binding = verify_canonical_binding(
+                evidence.get("canonical_market_data"),
+                holdout,
+            )
+            add_check(
+                checks,
+                "evidence.canonical_binding",
+                True,
+                canonical_binding,
+                "valid and unchanged",
+            )
+        except Exception as exc:
+            add_check(
+                checks,
+                "evidence.canonical_binding",
+                False,
+                str(exc),
+                "valid and unchanged",
+            )
         training_end = pd.Timestamp(contract["training_data_end"]).normalize()
         start = pd.to_datetime(holdout.get("start"), errors="coerce")
         end = pd.to_datetime(holdout.get("end"), errors="coerce")
@@ -706,6 +867,12 @@ def validate(
             "sha256": sha256_file(contract_path),
         },
         "evidence": str(evidence_path.resolve()) if evidence_path else None,
+        "evidence_sha256": (
+            sha256_file(evidence_path)
+            if evidence_path is not None and evidence_path.is_file()
+            else None
+        ),
+        "canonical_market_data": evidence.get("canonical_market_data"),
         "training_data_end": contract.get("training_data_end"),
         "champion_profile_id": champion_id,
         "selected_profile_id": selected,
@@ -731,6 +898,7 @@ def parser() -> argparse.ArgumentParser:
     build.add_argument("--contract", type=Path, required=True)
     build.add_argument("--profile-log", action="append", default=[])
     build.add_argument("--profile-manifest", action="append", default=[])
+    build.add_argument("--canonical-readiness", type=Path, required=True)
     build.add_argument("--output", type=Path, required=True)
     check = sub.add_parser("validate")
     check.add_argument("--contract", type=Path, required=True)
@@ -747,6 +915,7 @@ def main() -> None:
             parse_mapping(args.profile_log, "profile-log"),
             parse_mapping(args.profile_manifest, "profile-manifest"),
             args.output,
+            args.canonical_readiness,
         )
         print(
             "[strategy promotion] evidence "
