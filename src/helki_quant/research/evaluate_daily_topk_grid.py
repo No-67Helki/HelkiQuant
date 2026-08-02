@@ -8,16 +8,28 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from concentration_constraints import load_group_metadata
-from portfolio_experiments import (
-    BASE_COST,
-    STRESS_COST,
-    ExperimentConfig,
-    add_risk_and_timing_thresholds,
-    prepare_research_frame,
-    replay_topk,
-)
-from universe import UniverseRules, load_price_panel
+try:
+    from .concentration_constraints import load_group_metadata
+    from .portfolio_experiments import (
+        BASE_COST,
+        STRESS_COST,
+        ExperimentConfig,
+        add_risk_and_timing_thresholds,
+        prepare_research_frame,
+        replay_topk,
+    )
+    from .universe import UniverseRules, load_price_panel
+except ImportError:  # pragma: no cover - direct script compatibility
+    from concentration_constraints import load_group_metadata
+    from portfolio_experiments import (
+        BASE_COST,
+        STRESS_COST,
+        ExperimentConfig,
+        add_risk_and_timing_thresholds,
+        prepare_research_frame,
+        replay_topk,
+    )
+    from universe import UniverseRules, load_price_panel
 
 
 HERE = Path(__file__).resolve().parent

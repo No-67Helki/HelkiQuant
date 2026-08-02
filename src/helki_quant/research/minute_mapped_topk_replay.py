@@ -8,18 +8,45 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from capital_aware_allocation import ALLOCATION_MODES, allocate_equal_weight_lots
-from concentration_constraints import (
-    ConcentrationRules,
-    concentration_snapshot,
-    groups_on_date,
-    load_group_metadata,
-    select_with_group_cap,
-)
-from evaluate_daily_topk_grid import load_middle_predictions
-from minute_cd_replay import load_minute_windows, read_pool
-from portfolio_experiments import BASE_COST, STRESS_COST, CostScenario, ExperimentConfig
-from universe import UniverseRules, load_price_panel
+try:
+    from .capital_aware_allocation import (
+        ALLOCATION_MODES,
+        allocate_equal_weight_lots,
+    )
+    from .concentration_constraints import (
+        ConcentrationRules,
+        concentration_snapshot,
+        groups_on_date,
+        load_group_metadata,
+        select_with_group_cap,
+    )
+    from .evaluate_daily_topk_grid import load_middle_predictions
+    from .minute_cd_replay import load_minute_windows, read_pool
+    from .portfolio_experiments import (
+        BASE_COST,
+        STRESS_COST,
+        CostScenario,
+        ExperimentConfig,
+    )
+    from .universe import UniverseRules, load_price_panel
+except ImportError:  # pragma: no cover - direct script compatibility
+    from capital_aware_allocation import ALLOCATION_MODES, allocate_equal_weight_lots
+    from concentration_constraints import (
+        ConcentrationRules,
+        concentration_snapshot,
+        groups_on_date,
+        load_group_metadata,
+        select_with_group_cap,
+    )
+    from evaluate_daily_topk_grid import load_middle_predictions
+    from minute_cd_replay import load_minute_windows, read_pool
+    from portfolio_experiments import (
+        BASE_COST,
+        STRESS_COST,
+        CostScenario,
+        ExperimentConfig,
+    )
+    from universe import UniverseRules, load_price_panel
 
 
 HERE = Path(__file__).resolve().parent

@@ -10,26 +10,51 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from capital_aware_allocation import ALLOCATION_MODES, allocate_equal_weight_lots
-from concentration_constraints import (
-    ConcentrationRules,
-    concentration_snapshot,
-    groups_on_date,
-    load_group_metadata,
-    select_with_group_cap,
-)
-from evaluate_daily_topk_grid import load_middle_predictions
-from minute_mapped_topk_replay import (
-    MappedProfile,
-    MappedReplayConfig,
-    min_buy_lot,
-    order_delta_key,
-    prepare_daily_frame,
-    round_lot,
-    safe_price,
-)
-from portfolio_experiments import BASE_COST, STRESS_COST, CostScenario
-from universe import load_price_panel
+try:
+    from .capital_aware_allocation import (
+        ALLOCATION_MODES,
+        allocate_equal_weight_lots,
+    )
+    from .concentration_constraints import (
+        ConcentrationRules,
+        concentration_snapshot,
+        groups_on_date,
+        load_group_metadata,
+        select_with_group_cap,
+    )
+    from .evaluate_daily_topk_grid import load_middle_predictions
+    from .minute_mapped_topk_replay import (
+        MappedProfile,
+        MappedReplayConfig,
+        min_buy_lot,
+        order_delta_key,
+        prepare_daily_frame,
+        round_lot,
+        safe_price,
+    )
+    from .portfolio_experiments import BASE_COST, STRESS_COST, CostScenario
+    from .universe import load_price_panel
+except ImportError:  # pragma: no cover - direct script compatibility
+    from capital_aware_allocation import ALLOCATION_MODES, allocate_equal_weight_lots
+    from concentration_constraints import (
+        ConcentrationRules,
+        concentration_snapshot,
+        groups_on_date,
+        load_group_metadata,
+        select_with_group_cap,
+    )
+    from evaluate_daily_topk_grid import load_middle_predictions
+    from minute_mapped_topk_replay import (
+        MappedProfile,
+        MappedReplayConfig,
+        min_buy_lot,
+        order_delta_key,
+        prepare_daily_frame,
+        round_lot,
+        safe_price,
+    )
+    from portfolio_experiments import BASE_COST, STRESS_COST, CostScenario
+    from universe import load_price_panel
 
 
 HERE = Path(__file__).resolve().parent
