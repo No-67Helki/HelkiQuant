@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "status": "frozen_profile_receipt",
+  "profile_id": "challenger_capital_aware_alpha_health",
+  "role": "challenger",
+  "frozen_at": "2026-07-31",
+  "packaged_at": "2026-08-02",
+  "training_data_end": "2026-06-05",
+  "source_manifest_sha256": "CF66B2CEB008901C9715227F1EC797002317CB7EC22F7A58C102670793177DDF",
+  "parameters": {
+    "top_k": 150,
+    "rebalance_every": 30,
+    "risk_budget": 0.6,
+    "industry_cap": 0.3,
+    "buffer_multiple": 4,
+    "allocation_mode": "capital_aware",
+    "outer_risk_threshold": 0.5,
+    "outer_risk_floor": 0.2,
+    "pause_buys_on_sell_reject": true,
+    "sell_first": true,
+    "cost_name": "stress"
+  },
+  "overlay": {
+    "kind": "broad_loss5_or_alpha_health",
+    "policy": {
+      "label_horizon_trading_days": 5,
+      "rolling_ic_observations": 20,
+      "min_observations": 10,
+      "min_cross_section": 100,
+      "health_threshold": 0.0,
+      "trigger_value": 1.0,
+      "causal_filter": "available_date <= decision_date"
+    }
+  },
+  "evidence_scope": "historical_research_only",
+  "untouched_holdout_evaluated": false,
+  "paper_candidate_only": true,
+  "real_money_deployment_allowed": false
+}

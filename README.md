@@ -49,6 +49,8 @@ flowchart LR
 - Capital, commission, slippage, turnover, cash, sell-block, and stale-holding
   stress scenarios.
 - Frozen Profile promotion with artifact hashes and fail-closed gates.
+- A self-contained Top150 champion/challenger contract at
+  `configs/frozen_strategy_promotion_20260731.json`.
 - Canonical readiness, manifest, and exact holdout-calendar binding in
   promotion evidence.
 - One PAPER activation record per account, strategy, and trade date.

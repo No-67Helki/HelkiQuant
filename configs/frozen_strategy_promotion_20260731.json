@@ -1,0 +1,126 @@
+{
+  "schema_version": 1,
+  "status": "frozen_outer_middle_champion_challenger_contract",
+  "frozen_at": "2026-07-31",
+  "packaged_at": "2026-08-02",
+  "training_data_end": "2026-06-05",
+  "description": "One-shot untouched comparison of the stable outer-middle champion and two same-architecture challengers. This contract may select a PAPER candidate but never authorizes real-money deployment.",
+  "profiles": [
+    {
+      "id": "champion_outer_direct_stable",
+      "role": "champion",
+      "frozen_artifact": {
+        "path": "configs/frozen_profiles/champion_outer_direct_stable.json",
+        "sha256": "4C8C70B8E313F5BD891732118102973E417F5026ED9FD15D688864942747B323"
+      },
+      "parameters": {
+        "top_k": 150,
+        "rebalance_every": 20,
+        "risk_budget": 0.6,
+        "industry_cap": 0.3,
+        "buffer_multiple": 2,
+        "allocation_mode": "fixed_topk",
+        "outer_risk_threshold": 0.5,
+        "outer_risk_floor": 0.3,
+        "pause_buys_on_sell_reject": true,
+        "sell_first": true,
+        "cost_name": "stress"
+      },
+      "overlay": {
+        "kind": "broad_loss5"
+      }
+    },
+    {
+      "id": "challenger_capital_aware",
+      "role": "challenger",
+      "frozen_artifact": {
+        "path": "configs/frozen_profiles/challenger_capital_aware.json",
+        "sha256": "145D70345D096622508D6A2CFD1E8F9F843D6CB0C1913ACDC51B87ACE6D1D257"
+      },
+      "parameters": {
+        "top_k": 150,
+        "rebalance_every": 30,
+        "risk_budget": 0.6,
+        "industry_cap": 0.3,
+        "buffer_multiple": 4,
+        "allocation_mode": "capital_aware",
+        "outer_risk_threshold": 0.5,
+        "outer_risk_floor": 0.2,
+        "pause_buys_on_sell_reject": true,
+        "sell_first": true,
+        "cost_name": "stress"
+      },
+      "overlay": {
+        "kind": "broad_loss5"
+      }
+    },
+    {
+      "id": "challenger_capital_aware_alpha_health",
+      "role": "challenger",
+      "frozen_artifact": {
+        "path": "configs/frozen_profiles/challenger_capital_aware_alpha_health.json",
+        "sha256": "E88CB3651FCFE8BB034251E7F924C62B91E5BB960181F90CB363913A31B8F276"
+      },
+      "parameters": {
+        "top_k": 150,
+        "rebalance_every": 30,
+        "risk_budget": 0.6,
+        "industry_cap": 0.3,
+        "buffer_multiple": 4,
+        "allocation_mode": "capital_aware",
+        "outer_risk_threshold": 0.5,
+        "outer_risk_floor": 0.2,
+        "pause_buys_on_sell_reject": true,
+        "sell_first": true,
+        "cost_name": "stress"
+      },
+      "overlay": {
+        "kind": "broad_loss5_or_alpha_health",
+        "generator": {
+          "path": "src/helki_quant/research/build_middle_alpha_health_outer.py",
+          "sha256": "02763E4F4CC2EBD9B7FE97C8F4A3C4D110D8D017C98B83587C0BAEC69DD9C04B"
+        },
+        "policy": {
+          "label_horizon_trading_days": 5,
+          "rolling_ic_observations": 20,
+          "min_observations": 10,
+          "min_cross_section": 100,
+          "health_threshold": 0.0,
+          "trigger_value": 1.0,
+          "causal_filter": "available_date <= decision_date"
+        }
+      }
+    }
+  ],
+  "holdout_rules": {
+    "min_sessions": 60,
+    "min_total_return": 0.0,
+    "min_sharpe": 0.5,
+    "max_drawdown": 0.08,
+    "max_daily_turnover": 0.8,
+    "min_cash_ratio": 0.2,
+    "max_gross_exposure": 0.75,
+    "min_rebalance_count": 2,
+    "min_trades": 50,
+    "min_worst_month_return": -0.05,
+    "min_positive_month_ratio": 0.5,
+    "max_negative_cash_events": 0,
+    "max_lot_violations": 0,
+    "max_nav_mismatch": 0.000001
+  },
+  "promotion_rules": {
+    "min_return_delta": 0.0,
+    "max_drawdown_increase": 0.005,
+    "max_turnover_ratio": 1.5,
+    "min_worst_month_delta": -0.005,
+    "min_utility_delta": 0.005,
+    "utility_weights": {
+      "return": 1.0,
+      "sharpe": 0.05,
+      "drawdown": 2.0,
+      "turnover": 0.01
+    }
+  },
+  "paper_candidate_only": true,
+  "real_money_deployment_allowed": false
+}

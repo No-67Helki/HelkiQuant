@@ -17,8 +17,10 @@ sys.path.insert(0, str(RESEARCH))
 from validate_frozen_strategy_promotion import (  # noqa: E402
     build_canonical_binding,
     build_evidence,
+    load_json,
     sha256_file,
     validate,
+    verify_frozen_contract,
 )
 
 
@@ -63,6 +65,29 @@ PROFILE_PARAMETERS = {
         "cost_name": "stress",
     },
 }
+
+
+def test_repository_frozen_contract_is_self_contained() -> None:
+    contract_path = ROOT / "configs" / "frozen_strategy_promotion_20260731.json"
+    contract = load_json(contract_path)
+
+    verified = verify_frozen_contract(contract)
+
+    assert set(verified) == {
+        "champion_outer_direct_stable",
+        "challenger_capital_aware",
+        "challenger_capital_aware_alpha_health",
+        "challenger_capital_aware_alpha_health.generator",
+    }
+    public_payloads = [contract_path]
+    public_payloads.extend(
+        ROOT / profile["frozen_artifact"]["path"]
+        for profile in contract["profiles"]
+    )
+    for path in public_payloads:
+        text = path.read_text(encoding="utf-8")
+        assert ":\\" not in text
+        assert "1f822ada-4ce6-11f1-a506-00163e022aa6" not in text
 
 
 def test_incomplete_canonical_window_fails_before_return_evaluation(

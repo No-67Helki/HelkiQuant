@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "status": "frozen_profile_receipt",
+  "profile_id": "challenger_capital_aware",
+  "role": "challenger",
+  "frozen_at": "2026-07-31",
+  "packaged_at": "2026-08-02",
+  "training_data_end": "2026-06-05",
+  "source_manifest_sha256": "BF4F415E32E5554342737AB4696965080D2FA7F3F3D1CDA6FB6C883D330039A6",
+  "parameters": {
+    "top_k": 150,
+    "rebalance_every": 30,
+    "risk_budget": 0.6,
+    "industry_cap": 0.3,
+    "buffer_multiple": 4,
+    "allocation_mode": "capital_aware",
+    "outer_risk_threshold": 0.5,
+    "outer_risk_floor": 0.2,
+    "pause_buys_on_sell_reject": true,
+    "sell_first": true,
+    "cost_name": "stress"
+  },
+  "overlay": {
+    "kind": "broad_loss5"
+  },
+  "evidence_scope": "historical_research_only",
+  "untouched_holdout_evaluated": false,
+  "paper_candidate_only": true,
+  "real_money_deployment_allowed": false
+}

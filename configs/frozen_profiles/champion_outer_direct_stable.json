@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "status": "frozen_profile_receipt",
+  "profile_id": "champion_outer_direct_stable",
+  "role": "champion",
+  "frozen_at": "2026-07-31",
+  "packaged_at": "2026-08-02",
+  "training_data_end": "2026-06-05",
+  "source_manifest_sha256": "6AC1FEBA43F98C5F5602A7DBFB462C7ECE8F4F6B1D1FC17F79BCBE313F7E7CF9",
+  "parameters": {
+    "top_k": 150,
+    "rebalance_every": 20,
+    "risk_budget": 0.6,
+    "industry_cap": 0.3,
+    "buffer_multiple": 2,
+    "allocation_mode": "fixed_topk",
+    "outer_risk_threshold": 0.5,
+    "outer_risk_floor": 0.3,
+    "pause_buys_on_sell_reject": true,
+    "sell_first": true,
+    "cost_name": "stress"
+  },
+  "overlay": {
+    "kind": "broad_loss5"
+  },
+  "evidence_scope": "historical_research_only",
+  "untouched_holdout_evaluated": false,
+  "paper_candidate_only": true,
+  "real_money_deployment_allowed": false
+}

@@ -80,13 +80,13 @@ profile must use the exact same audited calendar:
 
 ```powershell
 helki-promote-frozen build `
-  --contract PATH_TO_FROZEN_CONTRACT.json `
+  --contract configs/frozen_strategy_promotion_20260731.json `
   --canonical-readiness outputs/canonical_VERSION_readiness.json `
   --profile-log PROFILE_ID=PATH_TO_PRODUCTION_STYLE_REPLAY `
   --output outputs/frozen_untouched_evidence.json
 
 helki-promote-frozen validate `
-  --contract PATH_TO_FROZEN_CONTRACT.json `
+  --contract configs/frozen_strategy_promotion_20260731.json `
   --evidence outputs/frozen_untouched_evidence.json `
   --output outputs/frozen_promotion.json
 ```
@@ -96,6 +96,17 @@ Repeat `--profile-log` and, where required by the frozen contract,
 the exact canonical readiness report, canonical manifest, and session-calendar
 hash. A changed source artifact, different 60-session calendar, or legacy
 unbound evidence fails closed.
+
+The repository contract freezes exactly three outer-middle candidates:
+
+- `champion_outer_direct_stable`: Top150, 20-session rebalance, fixed Top-K;
+- `challenger_capital_aware`: Top150, 30-session rebalance, capital-aware;
+- `challenger_capital_aware_alpha_health`: the same capital-aware profile with
+  the frozen causal middle-alpha-health risk trigger.
+
+Their receipts preserve the original research-manifest hashes without local
+paths, account identifiers, targets, or generated market data. Do not replace
+these receipts or edit the contract after inspecting the untouched replay.
 
 ## Current Evidence Snapshot
 
