@@ -66,6 +66,7 @@ def validate_models(candidate: Path) -> dict[str, Any]:
         "directions": set(manifest.get("models", {})) == {"buy_first", "sell_first"},
     }
     details = {}
+    feature_contracts: dict[str, list[str]] = {}
     for direction, expected in {
         "buy_first": {"threshold": 0.925, "top_n": 2, "trigger": 0.006},
         "sell_first": {"threshold": 0.975, "top_n": 1, "trigger": 0.0075},
@@ -76,6 +77,9 @@ def validate_models(candidate: Path) -> dict[str, Any]:
         meta_path = candidate / Path(item.get("meta_path", "missing")).name
         meta = load_json(meta_path) if meta_path.exists() else {}
         calibration = np.load(calibration_path) if calibration_path.exists() else np.array([])
+        manifest_features = list(item.get("feature_cols") or [])
+        meta_features = list(meta.get("feature_cols") or [])
+        feature_contracts[direction] = manifest_features
         direction_checks = {
             "model_exists": model_path.exists() and model_path.stat().st_size > 0,
             "calibration_rows": len(calibration) >= 100,
@@ -83,8 +87,9 @@ def validate_models(candidate: Path) -> dict[str, Any]:
             "meta_exists": meta_path.exists(),
             "deployment_disabled": meta.get("deployment_allowed") is False,
             "feature_mode_live": meta.get("feature_mode") == "live",
-            "feature_count_115": len(meta.get("feature_cols") or []) == 115,
-            "no_unstable_features": not ({"held_age_days", "held_prev_day_ret"} & set(meta.get("feature_cols") or [])),
+            "feature_contract_nonempty": len(manifest_features) > 0,
+            "feature_contract_matches_meta": manifest_features == meta_features,
+            "no_unstable_features": not ({"held_age_days", "held_prev_day_ret"} & set(meta_features)),
             "threshold": abs(float(meta.get("score_threshold", -1)) - expected["threshold"]) < 1e-12,
             "top_n": int(meta.get("daily_top_n", -1)) == expected["top_n"],
             "trigger": abs(float(meta.get("trigger_distance", -1)) - expected["trigger"]) < 1e-12,
@@ -96,6 +101,9 @@ def validate_models(candidate: Path) -> dict[str, Any]:
             "calibration_metrics": meta.get("calibration_metrics"),
         }
         checks[f"{direction}_passed"] = details[direction]["passed"]
+    checks["shared_feature_contract"] = (
+        feature_contracts.get("buy_first") == feature_contracts.get("sell_first")
+    )
     return {"passed": all(checks.values()), "checks": checks, "details": details}
 
 

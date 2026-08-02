@@ -113,19 +113,32 @@ def run_trigger_replay(
     slippage: float,
     min_cost: float,
 ) -> dict:
-    trades = pd.read_csv(base_trades_path, parse_dates=["trade_date"])
+    try:
+        trades = pd.read_csv(base_trades_path, parse_dates=["trade_date"])
+    except pd.errors.EmptyDataError:
+        trades = pd.DataFrame(
+            columns=[
+                "trade_date",
+                "instrument",
+                "decision_time",
+                "threshold",
+                "daily_top_n",
+            ]
+        )
     daily_template = pd.read_csv(base_daily_path, parse_dates=["trade_date"])
     account = pd.read_csv(daily_account_path, parse_dates=["trade_date"])
     for frame in (trades, daily_template, account):
-        frame["trade_date"] = frame["trade_date"].dt.normalize()
+        frame["trade_date"] = pd.to_datetime(
+            frame["trade_date"], errors="raise"
+        ).dt.normalize()
     trades["instrument"] = trades["instrument"].astype(str).str.upper()
     trades["decision_time"] = (
         trades["decision_time"].astype(str).str.replace(r"\.0$", "", regex=True).str.zfill(4)
     )
     trades = select_setting(trades, threshold, daily_top_n)
     daily_template = select_setting(daily_template, threshold, daily_top_n)
-    if trades.empty or daily_template.empty:
-        raise ValueError("selected base replay setting has no trades or daily rows")
+    if daily_template.empty:
+        raise ValueError("selected base replay setting has no daily rows")
     extrema = load_trigger_extrema(trades, stage_dir, window_end_minute)
     nav_by_date = account.drop_duplicates("trade_date", keep="last").set_index("trade_date")["nav"]
     cash_by_date = account.drop_duplicates("trade_date", keep="last").set_index("trade_date")["cash"]
