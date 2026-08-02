@@ -2,17 +2,19 @@ from __future__ import annotations
 
 import argparse
 import json
-import subprocess
-import sys
 from pathlib import Path
 
 import pandas as pd
+
+try:
+    from .qlib_provider_writer import build_qlib_provider
+except ImportError:
+    from qlib_provider_writer import build_qlib_provider
 
 
 HERE = Path(__file__).resolve().parent
 REPO_ROOT = HERE.parents[2]
 RAW_DIR = REPO_ROOT / "data" / "A_Stock_daily_qfq"
-DUMP_SCRIPT = REPO_ROOT / "scripts" / "dump_bin.py"
 DEFAULT_STAGE = REPO_ROOT / "data" / "_research_pit_daily_csv"
 DEFAULT_OUTPUT = REPO_ROOT / "data" / "cn_data_research_pit"
 BOARD_PREFIXES = ("30", "68")
@@ -159,25 +161,15 @@ def build(
         if pos % 250 == 0:
             print(f"[stage] {pos}/{len(files)} written={written}", flush=True)
 
-    command = [
-        sys.executable,
-        str(DUMP_SCRIPT),
-        "dump_all",
-        "--data_path",
-        str(stage_dir),
-        "--qlib_dir",
-        str(output_dir),
-        "--freq",
-        "day",
-        "--date_field_name",
-        "date",
-        "--symbol_field_name",
-        "symbol",
-        "--max_workers",
-        str(max_workers),
-    ]
     print(f"[dump] instruments={written} vwap_mode={vwap_mode} -> {output_dir}", flush=True)
-    subprocess.run(command, check=True)
+    build_qlib_provider(
+        stage_dir,
+        output_dir,
+        frequency="day",
+        date_field="date",
+        symbol_field="symbol",
+        max_workers=max_workers,
+    )
 
 
 def main() -> None:

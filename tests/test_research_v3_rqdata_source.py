@@ -29,9 +29,14 @@ from helki_quant.research.data_sources.rqdata_source import (
     read_price_csv,
 )
 from helki_quant.research.materialize_rqdata_canonical import (
+    align_daily_fallback_scale,
     materialize_daily,
     materialize_minute,
     symbols_from_args,
+)
+from helki_quant.research.sync_rqdata_market_data import (
+    build_pit_universe_symbols,
+    prepare_symbols,
 )
 
 
@@ -70,6 +75,65 @@ def test_symbol_conversions_cover_local_rq_and_gm_formats() -> None:
     assert local_symbol("SHSE.600000") == "sh600000"
     assert local_to_rq("sz000001") == "000001.XSHE"
     assert rq_to_local("600000.XSHG") == "sh600000"
+
+
+def test_generated_symbol_lists_do_not_collide_by_pool_or_purpose(
+    tmp_path: Path,
+) -> None:
+    common = {
+        "config": {},
+        "symbols_file": None,
+        "date": "2026-07-31",
+        "generated_root": tmp_path,
+    }
+    daily = prepare_symbols(
+        symbols="sz000001,sh600000",
+        purpose="1d",
+        **common,
+    )
+    minute = prepare_symbols(
+        symbols="sz000001,sh600000",
+        purpose="1m",
+        **common,
+    )
+    other_daily = prepare_symbols(
+        symbols="sz000001,sz300001",
+        purpose="1d",
+        **common,
+    )
+
+    assert len({daily.name, minute.name, other_daily.name}) == 3
+    assert daily.read_text(encoding="utf-8").splitlines() == [
+        "sh600000",
+        "sz000001",
+    ]
+
+
+def test_pit_universe_includes_symbols_active_anytime_in_window(
+    tmp_path: Path,
+) -> None:
+    instruments = tmp_path / "instruments.csv"
+    pd.DataFrame(
+        {
+            "instrument": ["sz000001", "sz000002", "sz000003"],
+            "listed_date": ["1991-01-01", "2026-06-10", "1991-01-01"],
+            "de_listed_date": ["0000-00-00", "0000-00-00", "2026-06-20"],
+        }
+    ).to_csv(instruments, index=False)
+    output = tmp_path / "pit.txt"
+
+    build_pit_universe_symbols(
+        instruments,
+        start_date="2026-06-08",
+        end_date="2026-07-31",
+        output=output,
+    )
+
+    assert output.read_text(encoding="utf-8").splitlines() == [
+        "sz000001",
+        "sz000002",
+        "sz000003",
+    ]
 
 
 def test_minute_request_uses_only_rqdata_supported_price_fields() -> None:
@@ -133,6 +197,38 @@ def test_primary_overrides_same_date_and_fallback_preserves_history() -> None:
     assert len(merged) == 6
     assert merged.loc[merged["date"] == primary.iloc[0]["date"], "close"].item() == 99.0
     assert merged.iloc[0]["close"] == fallback.iloc[0]["close"]
+
+
+def test_daily_fallback_scale_alignment_removes_source_boundary_jump() -> None:
+    fallback = price_frame().iloc[:8].copy()
+    primary = price_frame(scale=0.7).iloc[3:10].copy()
+
+    aligned, evidence = align_daily_fallback_scale(primary, fallback)
+    merged = merge_price_sources(primary, aligned)
+    expected_return = (
+        primary.loc[primary.index == 8, "close"].item()
+        / primary.loc[primary.index == 7, "close"].item()
+        - 1.0
+    )
+    stitched_return = (
+        merged.loc[merged["date"] == primary.loc[8, "date"], "close"].item()
+        / merged.loc[merged["date"] == fallback.loc[7, "date"], "close"].item()
+        - 1.0
+    )
+
+    assert evidence["scale_alignment_status"] == "aligned"
+    assert evidence["scale_factor"] == pytest.approx(0.7)
+    assert stitched_return == pytest.approx(expected_return)
+
+
+def test_daily_fallback_scale_alignment_rejects_unstable_overlap() -> None:
+    fallback = price_frame().copy()
+    primary = price_frame(scale=0.7, damaged=True).copy()
+
+    aligned, evidence = align_daily_fallback_scale(primary, fallback)
+
+    assert aligned is fallback
+    assert evidence["scale_alignment_status"] == "unstable_overlap"
 
 
 def test_quality_gate_accepts_front_adjustment_scale_only() -> None:

@@ -6,6 +6,11 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+try:
+    from .data_sources.rqdata_source import read_price_csv
+except ImportError:
+    from data_sources.rqdata_source import read_price_csv
+
 
 @dataclass(frozen=True)
 class UniverseRules:
@@ -36,21 +41,9 @@ def load_price_panel(
         path = raw_dir / f"{code}_daily_qfq.csv"
         if not path.exists():
             continue
-        frame = pd.read_csv(
-            path,
-            usecols=["日期", "开盘", "收盘", "最高", "最低", "成交量", "成交额"],
-        ).rename(
-            columns={
-                "日期": "datetime",
-                "开盘": "open",
-                "收盘": "close",
-                "最高": "high",
-                "最低": "low",
-                "成交量": "volume",
-                "成交额": "amount",
-            }
+        frame = read_price_csv(path, frequency="1d").rename(
+            columns={"date": "datetime"}
         )
-        frame["datetime"] = pd.to_datetime(frame["datetime"])
         frame = frame[frame["datetime"].between(start_ts, end_ts)].copy()
         if frame.empty:
             continue

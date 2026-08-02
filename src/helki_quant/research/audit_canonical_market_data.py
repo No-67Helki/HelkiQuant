@@ -26,6 +26,7 @@ def build_report(
     manifest_path: Path,
     pit_state_path: Path,
     active_instruments_path: Path,
+    pit_instruments_path: Path | None = None,
     target_symbols_path: Path,
     cutoff: pd.Timestamp,
     min_sessions: int,
@@ -38,10 +39,68 @@ def build_report(
     pit = pd.read_csv(pit_state_path, parse_dates=["date"])
     pit = pit[pit["date"] > cutoff].copy()
     sessions = pd.DatetimeIndex(sorted(pit["date"].dropna().unique()))
-    pit_counts = pit.groupby("date")["instrument"].nunique()
-
     active_frame = pd.read_csv(active_instruments_path, dtype=str)
-    active_symbols = {local_symbol(value) for value in active_frame["instrument"].dropna()}
+    if (
+        len(sessions)
+        and {"listed_date", "de_listed_date"}.issubset(active_frame.columns)
+    ):
+        active_listed = pd.to_datetime(active_frame["listed_date"], errors="coerce")
+        active_delisted = pd.to_datetime(
+            active_frame["de_listed_date"].replace("0000-00-00", pd.NA),
+            errors="coerce",
+        )
+        active_frame = active_frame.loc[
+            active_listed.le(sessions.max())
+            & (active_delisted.isna() | active_delisted.ge(sessions.max()))
+        ]
+    active_symbols = {
+        local_symbol(value) for value in active_frame["instrument"].dropna()
+    }
+    pit_instruments = pd.read_csv(
+        pit_instruments_path or active_instruments_path,
+        dtype=str,
+    )
+    pit_instruments["instrument"] = pit_instruments["instrument"].map(
+        local_symbol
+    )
+    if {"listed_date", "de_listed_date"}.issubset(pit_instruments.columns):
+        pit_instruments["listed_date"] = pd.to_datetime(
+            pit_instruments["listed_date"], errors="coerce"
+        )
+        pit_instruments["de_listed_date"] = pd.to_datetime(
+            pit_instruments["de_listed_date"].replace("0000-00-00", pd.NA),
+            errors="coerce",
+        )
+    else:
+        pit_instruments["listed_date"] = pd.Timestamp.min
+        pit_instruments["de_listed_date"] = pd.NaT
+    pit_instruments = pit_instruments.drop_duplicates("instrument", keep="last")
+    pit_by_date = {
+        pd.Timestamp(date): set(part["instrument"].map(local_symbol))
+        for date, part in pit.groupby("date", sort=True)
+    }
+    missing_pit_by_date: dict[str, list[str]] = {}
+    expected_pit_counts: list[int] = []
+    observed_pit_counts: list[int] = []
+    pit_universe_symbols: set[str] = set()
+    for session in sessions:
+        expected = set(
+            pit_instruments.loc[
+                pit_instruments["listed_date"].le(session)
+                & (
+                    pit_instruments["de_listed_date"].isna()
+                    | pit_instruments["de_listed_date"].ge(session)
+                ),
+                "instrument",
+            ]
+        )
+        observed = pit_by_date.get(pd.Timestamp(session), set())
+        missing = sorted(expected - observed)
+        pit_universe_symbols.update(expected)
+        expected_pit_counts.append(len(expected))
+        observed_pit_counts.append(len(observed & expected))
+        if missing:
+            missing_pit_by_date[pd.Timestamp(session).strftime("%Y-%m-%d")] = missing
     target_symbols = read_symbol_file(target_symbols_path)
     minute_files = minute.get("files", [])
     minute_symbols = {local_symbol(row["instrument"]) for row in minute_files}
@@ -57,15 +116,35 @@ def build_report(
             if int(row["rows"]) != expected_rows
         }.items()
     )
+    daily_files = daily.get("files", [])
+    daily_primary_symbols = {
+        local_symbol(row["instrument"])
+        for row in daily_files
+        if int(row.get("rqdata_rows") or 0) > 0
+    }
+    missing_pit_primary_symbols = sorted(
+        pit_universe_symbols - daily_primary_symbols
+    )
+    scale_alignment_failures = sorted(
+        {
+            local_symbol(row["instrument"]): str(
+                row.get("scale_alignment_status") or "missing_evidence"
+            )
+            for row in daily_files
+            if local_symbol(row["instrument"]) in pit_universe_symbols
+            and int(row.get("rqdata_rows") or 0) > 0
+            and int(row.get("fallback_rows") or 0) > 0
+            and row.get("scale_alignment_status") != "aligned"
+        }.items()
+    )
     daily_complete = bool(
         int(daily["written_symbols"]) == int(daily["requested_symbols"])
-        and int(daily["rqdata_symbols"]) == len(active_symbols)
+        and not missing_pit_primary_symbols
+        and not scale_alignment_failures
     )
     pit_complete = bool(
         len(sessions)
-        and not pit_counts.empty
-        and int(pit_counts.min()) == len(active_symbols)
-        and int(pit_counts.max()) == len(active_symbols)
+        and not missing_pit_by_date
     )
     minute_complete = not missing_active_targets and not bad_minute_rows
     data_integrity_passed = daily_complete and pit_complete and minute_complete
@@ -92,12 +171,35 @@ def build_report(
             "written_symbols": int(daily["written_symbols"]),
             "rqdata_symbols": int(daily["rqdata_symbols"]),
             "active_symbols": len(active_symbols),
+            "pit_universe_symbols": len(pit_universe_symbols),
+            "missing_pit_primary_symbols": missing_pit_primary_symbols,
+            "scale_alignment_failures": [
+                {"instrument": symbol, "status": status}
+                for symbol, status in scale_alignment_failures
+            ],
         },
         "pit_market_state": {
             "passed": pit_complete,
             "rows": int(len(pit)),
-            "min_symbols_per_session": int(pit_counts.min()) if len(pit_counts) else 0,
-            "max_symbols_per_session": int(pit_counts.max()) if len(pit_counts) else 0,
+            "expected_min_symbols_per_session": (
+                min(expected_pit_counts) if expected_pit_counts else 0
+            ),
+            "expected_max_symbols_per_session": (
+                max(expected_pit_counts) if expected_pit_counts else 0
+            ),
+            "observed_min_symbols_per_session": (
+                min(observed_pit_counts) if observed_pit_counts else 0
+            ),
+            "observed_max_symbols_per_session": (
+                max(observed_pit_counts) if observed_pit_counts else 0
+            ),
+            "missing_symbol_dates": int(
+                sum(len(values) for values in missing_pit_by_date.values())
+            ),
+            "missing_examples": [
+                {"date": date, "instruments": values[:20]}
+                for date, values in list(missing_pit_by_date.items())[:10]
+            ],
         },
         "minute": {
             "passed": minute_complete,
@@ -125,6 +227,7 @@ def parser() -> argparse.ArgumentParser:
     root.add_argument("--manifest", type=Path, required=True)
     root.add_argument("--pit-state", type=Path, required=True)
     root.add_argument("--active-instruments", type=Path, required=True)
+    root.add_argument("--pit-instruments", type=Path)
     root.add_argument("--target-symbols", type=Path, required=True)
     root.add_argument("--cutoff", default="2026-06-05")
     root.add_argument("--min-sessions", type=int, default=60)
@@ -139,6 +242,9 @@ def main() -> None:
         manifest_path=args.manifest.resolve(),
         pit_state_path=args.pit_state.resolve(),
         active_instruments_path=args.active_instruments.resolve(),
+        pit_instruments_path=(
+            args.pit_instruments.resolve() if args.pit_instruments else None
+        ),
         target_symbols_path=args.target_symbols.resolve(),
         cutoff=pd.Timestamp(args.cutoff),
         min_sessions=args.min_sessions,

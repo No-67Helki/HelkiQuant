@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -12,6 +13,7 @@ try:
         DEFAULT_CONFIG,
         REPO_ROOT,
         load_config,
+        local_symbol,
         read_license,
         resolve_repo_path,
         run_bridge,
@@ -22,6 +24,7 @@ except ImportError:
         DEFAULT_CONFIG,
         REPO_ROOT,
         load_config,
+        local_symbol,
         read_license,
         resolve_repo_path,
         run_bridge,
@@ -51,24 +54,34 @@ def prepare_symbols(
     symbols: str | None,
     symbols_file: Path | None,
     date: str,
+    purpose: str,
+    generated_root: Path | None = None,
 ) -> Path:
-    generated = OUTPUTS / "rqdata_sync" / f"symbols_{date.replace('-', '')}.txt"
     if symbols:
-        return write_symbol_file(generated, symbols.split(","))
-    if symbols_file is not None:
-        return write_symbol_file(generated, symbols_from_file(symbols_file.resolve()))
-
-    metadata_root = resolve_repo_path(config["primary"]["metadata_root"])
-    instruments = metadata_root / f"instruments_{date.replace('-', '')}.csv"
-    result = run_bridge(
-        config,
-        ["instruments", "--date", date, "--output", str(instruments)],
-        require_license=True,
+        values = symbols.split(",")
+    elif symbols_file is not None:
+        values = symbols_from_file(symbols_file.resolve())
+    else:
+        metadata_root = resolve_repo_path(config["primary"]["metadata_root"])
+        instruments = metadata_root / f"instruments_{date.replace('-', '')}.csv"
+        result = run_bridge(
+            config,
+            ["instruments", "--date", date, "--output", str(instruments)],
+            require_license=True,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"RQData instrument request failed with code {result.returncode}"
+            )
+        frame = pd.read_csv(instruments, dtype=str)
+        values = frame["instrument"].dropna().tolist()
+    normalized = sorted({local_symbol(value) for value in values})
+    digest = hashlib.sha256("\n".join(normalized).encode("ascii")).hexdigest()[:12]
+    root = generated_root or OUTPUTS / "rqdata_sync"
+    generated = root / (
+        f"symbols_{purpose}_{date.replace('-', '')}_{digest}.txt"
     )
-    if result.returncode != 0:
-        raise RuntimeError(f"RQData instrument request failed with code {result.returncode}")
-    frame = pd.read_csv(instruments, dtype=str)
-    return write_symbol_file(generated, frame["instrument"].dropna().tolist())
+    return write_symbol_file(generated, normalized)
 
 
 def doctor(config: dict, output: Path) -> int:
@@ -96,6 +109,7 @@ def fetch(config: dict, args: argparse.Namespace, frequency: str) -> int:
         symbols=args.symbols,
         symbols_file=args.symbols_file,
         date=args.end_date,
+        purpose=frequency,
     )
     api = config["api"]
     if frequency == "1d":
@@ -111,7 +125,10 @@ def fetch(config: dict, args: argparse.Namespace, frequency: str) -> int:
     manifest = (
         OUTPUTS
         / "rqdata_sync"
-        / f"{command}_{args.start_date.replace('-', '')}_{args.end_date.replace('-', '')}.json"
+        / (
+            f"{command}_{args.start_date.replace('-', '')}_"
+            f"{args.end_date.replace('-', '')}_{symbol_file.stem}.json"
+        )
     )
     bridge_args = [
         command,
@@ -150,11 +167,13 @@ def fetch_market_state(config: dict, args: argparse.Namespace) -> int:
         symbols=args.symbols,
         symbols_file=args.symbols_file,
         date=args.end_date,
+        purpose="state",
     )
     metadata_root = resolve_repo_path(config["primary"]["metadata_root"])
     output = metadata_root / "pit_market_state.csv"
     manifest = OUTPUTS / "rqdata_sync" / (
-        f"market_state_{args.start_date.replace('-', '')}_{args.end_date.replace('-', '')}.json"
+        f"market_state_{args.start_date.replace('-', '')}_"
+        f"{args.end_date.replace('-', '')}_{symbol_file.stem}.json"
     )
     api = config["api"]
     bridge_args = [
@@ -185,6 +204,53 @@ def fetch_market_state(config: dict, args: argparse.Namespace) -> int:
     return result.returncode
 
 
+def fetch_universe(config: dict, output: Path) -> int:
+    read_license(config, required=True)
+    result = run_bridge(
+        config,
+        [
+            "instruments",
+            "--all-history",
+            "--output",
+            str(output.resolve()),
+        ],
+        require_license=True,
+    )
+    log(
+        f"complete universe returncode={result.returncode} "
+        f"output={output.resolve()}"
+    )
+    return result.returncode
+
+
+def build_pit_universe_symbols(
+    instruments_path: Path,
+    *,
+    start_date: str,
+    end_date: str,
+    output: Path,
+) -> Path:
+    frame = pd.read_csv(instruments_path, dtype=str)
+    required = {"instrument", "listed_date", "de_listed_date"}
+    missing = required - set(frame.columns)
+    if missing:
+        raise ValueError(
+            f"historical instruments missing columns: {sorted(missing)}"
+        )
+    listed = pd.to_datetime(frame["listed_date"], errors="coerce")
+    delisted = pd.to_datetime(
+        frame["de_listed_date"].replace("0000-00-00", pd.NA),
+        errors="coerce",
+    )
+    start = pd.Timestamp(start_date).normalize()
+    end = pd.Timestamp(end_date).normalize()
+    eligible = listed.le(end) & (delisted.isna() | delisted.ge(start))
+    return write_symbol_file(
+        output,
+        frame.loc[eligible, "instrument"].dropna().tolist(),
+    )
+
+
 def parser() -> argparse.ArgumentParser:
     root = argparse.ArgumentParser(
         description="RQData-primary market data sync with local CSV fallback"
@@ -196,6 +262,12 @@ def parser() -> argparse.ArgumentParser:
     doctor_cmd.add_argument(
         "--output", type=Path, default=OUTPUTS / "rqdata_doctor.json"
     )
+
+    universe_cmd = sub.add_parser("universe")
+    universe_cmd.add_argument("--output", type=Path)
+    universe_cmd.add_argument("--pit-start")
+    universe_cmd.add_argument("--pit-end")
+    universe_cmd.add_argument("--symbols-output", type=Path)
 
     for name in ("daily", "minute", "state"):
         command = sub.add_parser(name)
@@ -211,6 +283,27 @@ def main() -> int:
     config = load_config(args.config)
     if args.command == "doctor":
         return doctor(config, args.output)
+    if args.command == "universe":
+        metadata_root = resolve_repo_path(config["primary"]["metadata_root"])
+        output = args.output or metadata_root / "instruments_all_history.csv"
+        returncode = fetch_universe(config, output)
+        pit_options = (args.pit_start, args.pit_end, args.symbols_output)
+        if any(pit_options):
+            if not all(pit_options):
+                raise ValueError(
+                    "--pit-start, --pit-end, and --symbols-output are required together"
+                )
+            symbols_output = build_pit_universe_symbols(
+                output,
+                start_date=args.pit_start,
+                end_date=args.pit_end,
+                output=args.symbols_output.resolve(),
+            )
+            log(
+                f"PIT universe symbols={len(symbols_from_file(symbols_output))} "
+                f"output={symbols_output}"
+            )
+        return returncode
     if pd.Timestamp(args.start_date) > pd.Timestamp(args.end_date):
         raise ValueError("start_date must not be after end_date")
     if args.command == "daily":

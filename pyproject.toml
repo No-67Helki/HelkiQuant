@@ -29,6 +29,8 @@ helki-rqdata-sync = "helki_quant.research.sync_rqdata_market_data:main"
 helki-rqdata-audit = "helki_quant.research.audit_rqdata_data_quality:main"
 helki-canonical-audit = "helki_quant.research.audit_canonical_market_data:main"
 helki-live-readiness = "helki_quant.research.validate_strategy_live_readiness:main"
+helki-build-provider = "helki_quant.research.qlib_provider_writer:main"
+helki-refresh-canonical = "helki_quant.research.refresh_canonical_market_data:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -59,6 +59,17 @@ historical dates or symbols, with the API row winning on equal timestamps.
 Minute histories must remain source-consistent across corporate actions; use a
 primary-only minute build whenever adjustment scales differ between providers.
 
+Front-adjusted daily histories are calibrated per symbol before the local
+fallback and API rows are merged. The calibration uses the median ratio from
+the first five overlapping sessions and fails closed when overlap is missing
+or unstable. This prevents a corporate action from appearing as a false return
+at the provider boundary.
+
+Canonical PIT coverage uses every stock listed on any session in the requested
+window, including stocks delisted before the end date. Both daily prices and
+ST/suspension state are audited against that dynamic universe so an end-date
+instrument query cannot introduce survivorship bias.
+
 The source-quality gate compares normalized OHLC paths, returns, timestamp
 coverage, volume and turnover consistency, duplicate rows, and invalid bars
 before a canonical provider can be promoted.
@@ -84,6 +95,22 @@ python -m helki_quant.research.materialize_rqdata_canonical minute `
   --start-date 2025-01-01 --end-date 2026-06-05 `
   --symbols sz000001,sh600000 --primary-only
 ```
+
+For an end-to-end versioned refresh, use the frozen target-symbol list and an
+explicit market-data cutoff. The command refreshes the daily overlap, complete
+PIT state, and source-consistent minute window before materialization and
+readiness audit. It never trains a model, computes a strategy return, or
+selects a Profile:
+
+```powershell
+helki-refresh-canonical `
+  --config configs/rqdata_source.local.json `
+  --end-date 2026-07-31 `
+  --target-symbols outputs/rqdata_sync/frozen_top150_symbols.txt
+```
+
+Each canonical date is immutable. If the requested version directory already
+exists, the refresh refuses to overwrite it.
 
 ## Installation
 
@@ -157,8 +184,9 @@ tests/              strategy, execution and safety regression coverage
 configs/            portable example configuration
 ```
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for component boundaries and
-[SECURITY.md](SECURITY.md) for credential and deployment requirements.
+See [ARCHITECTURE.md](ARCHITECTURE.md) for component boundaries,
+[DATA_PIPELINE.md](DATA_PIPELINE.md) for canonical refresh and evidence rules,
+and [SECURITY.md](SECURITY.md) for credential and deployment requirements.
 
 ## Status
 

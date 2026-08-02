@@ -6,13 +6,22 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from universe import (
-    UniverseRules,
-    add_point_in_time_eligibility,
-    instrument_to_code,
-    load_price_panel,
-)
-from concentration_constraints import groups_on_date
+try:
+    from .concentration_constraints import groups_on_date
+    from .universe import (
+        UniverseRules,
+        add_point_in_time_eligibility,
+        instrument_to_code,
+        load_price_panel,
+    )
+except ImportError:
+    from concentration_constraints import groups_on_date
+    from universe import (
+        UniverseRules,
+        add_point_in_time_eligibility,
+        instrument_to_code,
+        load_price_panel,
+    )
 
 
 @dataclass(frozen=True)

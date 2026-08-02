@@ -8,9 +8,30 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from analyze_outer_regime_labels import add_forward_paths, path_outcomes
-from augment_outer_regime_labels import read_calendar, read_instruments, write_qlib_bin
-from universe import UniverseRules, add_point_in_time_eligibility, load_price_panel
+try:
+    from .analyze_outer_regime_labels import add_forward_paths, path_outcomes
+    from .augment_outer_regime_labels import (
+        read_calendar,
+        read_instruments,
+        write_qlib_bin,
+    )
+    from .universe import (
+        UniverseRules,
+        add_point_in_time_eligibility,
+        load_price_panel,
+    )
+except ImportError:
+    from analyze_outer_regime_labels import add_forward_paths, path_outcomes
+    from augment_outer_regime_labels import (
+        read_calendar,
+        read_instruments,
+        write_qlib_bin,
+    )
+    from universe import (
+        UniverseRules,
+        add_point_in_time_eligibility,
+        load_price_panel,
+    )
 
 
 HERE = Path(__file__).resolve().parent

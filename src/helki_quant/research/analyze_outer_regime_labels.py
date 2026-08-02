@@ -7,8 +7,20 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from portfolio_experiments import load_predictions
-from universe import UniverseRules, add_point_in_time_eligibility, load_price_panel
+try:
+    from .portfolio_experiments import load_predictions
+    from .universe import (
+        UniverseRules,
+        add_point_in_time_eligibility,
+        load_price_panel,
+    )
+except ImportError:
+    from portfolio_experiments import load_predictions
+    from universe import (
+        UniverseRules,
+        add_point_in_time_eligibility,
+        load_price_panel,
+    )
 
 
 HERE = Path(__file__).resolve().parent

@@ -42,6 +42,96 @@ except ImportError:
 
 
 HERE = Path(__file__).resolve().parent
+DAILY_SCALE_COLUMNS = (
+    "open",
+    "high",
+    "low",
+    "close",
+    "limit_up",
+    "limit_down",
+    "prev_close",
+)
+MIN_SCALE_OVERLAP_ROWS = 5
+MAX_SCALE_REL_ERROR_P95 = 0.01
+
+
+def align_daily_fallback_scale(
+    primary: pd.DataFrame | None,
+    fallback: pd.DataFrame | None,
+    *,
+    min_overlap_rows: int = MIN_SCALE_OVERLAP_ROWS,
+    max_rel_error_p95: float = MAX_SCALE_REL_ERROR_P95,
+) -> tuple[pd.DataFrame | None, dict[str, Any]]:
+    if primary is None or primary.empty:
+        return fallback, {
+            "scale_alignment_status": "fallback_only",
+            "scale_factor": None,
+            "scale_overlap_rows": 0,
+            "scale_calibration_rows": 0,
+            "scale_rel_error_p95": None,
+        }
+    if fallback is None or fallback.empty:
+        return fallback, {
+            "scale_alignment_status": "primary_only",
+            "scale_factor": None,
+            "scale_overlap_rows": 0,
+            "scale_calibration_rows": 0,
+            "scale_rel_error_p95": None,
+        }
+
+    overlap = primary[["date", "close"]].merge(
+        fallback[["date", "close"]],
+        on="date",
+        how="inner",
+        suffixes=("_primary", "_fallback"),
+    )
+    primary_close = pd.to_numeric(overlap["close_primary"], errors="coerce")
+    fallback_close = pd.to_numeric(overlap["close_fallback"], errors="coerce")
+    valid = (
+        primary_close.notna()
+        & fallback_close.notna()
+        & (primary_close > 0)
+        & (fallback_close > 0)
+    )
+    ratios = (primary_close[valid] / fallback_close[valid]).dropna()
+    if len(ratios) < min_overlap_rows:
+        return fallback, {
+            "scale_alignment_status": "missing_overlap",
+            "scale_factor": None,
+            "scale_overlap_rows": int(len(ratios)),
+            "scale_calibration_rows": 0,
+            "scale_rel_error_p95": None,
+        }
+
+    # Only the leading overlap calibrates the fallback-to-primary boundary.
+    # Later corporate actions may legitimately change vendor adjustment ratios,
+    # but those later rows are already replaced by the primary source.
+    calibration = ratios.iloc[:min_overlap_rows]
+    scale = float(calibration.median())
+    relative_error = (calibration / scale - 1.0).abs()
+    rel_error_p95 = float(relative_error.quantile(0.95))
+    if not pd.notna(scale) or scale <= 0 or rel_error_p95 > max_rel_error_p95:
+        return fallback, {
+            "scale_alignment_status": "unstable_overlap",
+            "scale_factor": scale if pd.notna(scale) else None,
+            "scale_overlap_rows": int(len(ratios)),
+            "scale_calibration_rows": int(len(calibration)),
+            "scale_rel_error_p95": rel_error_p95,
+        }
+
+    aligned = fallback.copy()
+    for column in DAILY_SCALE_COLUMNS:
+        if column in aligned.columns:
+            aligned[column] = pd.to_numeric(
+                aligned[column], errors="coerce"
+            ) * scale
+    return aligned, {
+        "scale_alignment_status": "aligned",
+        "scale_factor": scale,
+        "scale_overlap_rows": int(len(ratios)),
+        "scale_calibration_rows": int(len(calibration)),
+        "scale_rel_error_p95": rel_error_p95,
+    }
 
 
 def symbols_from_args(args: argparse.Namespace, gateway: MarketDataGateway) -> list[str]:
@@ -84,6 +174,7 @@ def materialize_daily(
         fallback = read_price_csv(fallback_path, frequency="1d") if fallback_path.is_file() else None
         primary = restrict(primary, start, end, "daily") if primary is not None else None
         fallback = restrict(fallback, start, end, "daily") if fallback is not None else None
+        fallback, scale_evidence = align_daily_fallback_scale(primary, fallback)
         merged = merge_price_sources(primary, fallback)
         if merged.empty:
             continue
@@ -101,6 +192,7 @@ def materialize_daily(
                 "rqdata_rows": 0 if primary is None else len(primary),
                 "fallback_rows": 0 if fallback is None else len(fallback),
                 "output": str(output.resolve()),
+                **scale_evidence,
             }
         )
         if pos % 250 == 0 or pos == len(symbols):

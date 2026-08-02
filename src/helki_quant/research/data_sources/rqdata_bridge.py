@@ -327,9 +327,14 @@ def command_doctor(args: argparse.Namespace) -> int:
 
 def command_instruments(args: argparse.Namespace) -> int:
     rqdatac = initialize_rqdata()
+    if bool(args.all_history) == bool(args.date):
+        raise ValueError("supply exactly one of --date or --all-history")
+    request_kwargs: dict[str, Any] = {"type": "CS", "market": "cn"}
+    if args.date:
+        request_kwargs["date"] = args.date
     frame = retry_call(
         "all_instruments",
-        lambda: rqdatac.all_instruments(type="CS", date=args.date, market="cn"),
+        lambda: rqdatac.all_instruments(**request_kwargs),
         retries=args.retries,
         backoff_seconds=args.backoff,
     )
@@ -493,7 +498,8 @@ def parser() -> argparse.ArgumentParser:
     doctor.add_argument("--end-date", default="2026-06-05")
 
     instruments = sub.add_parser("instruments")
-    instruments.add_argument("--date", required=True)
+    instruments.add_argument("--date")
+    instruments.add_argument("--all-history", action="store_true")
     instruments.add_argument("--output", type=Path, required=True)
     instruments.add_argument("--retries", type=int, default=3)
     instruments.add_argument("--backoff", type=float, default=2.0)
